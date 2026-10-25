@@ -1,11 +1,12 @@
+
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Network permissions -->
+    <!-- Internet -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Android TV support -->
+    <!-- Android TV -->
     <uses-feature
         android:name="android.software.leanback"
         android:required="false" />
@@ -14,20 +15,27 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
+    <!-- Camera, GPS and microphone are not required -->
+
     <application
-        android:allowBackup="true"
+        android:name="${applicationName}"
+        android:allowBackup="false"
         android:label="VIETSTREAM MAX"
         android:usesCleartextTraffic="false"
         android:supportsRtl="true"
         android:hardwareAccelerated="true"
+        android:largeHeap="false"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
-        <!-- Main application screen -->
+        <!-- Main application -->
         <activity
             android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="unspecified"
             android:configChanges="orientation|screenSize|keyboardHidden"
-            android:exported="true">
+            android:launchMode="singleTop">
 
+            <!-- Android phone launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -41,19 +49,23 @@
 
         </activity>
 
-        <!-- In-app Media3 video player -->
+        <!-- Media3 video player -->
         <activity
             android:name=".InAppPlayerActivity"
             android:exported="false"
             android:screenOrientation="sensor"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:hardwareAccelerated="true"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
 
-        <!-- In-app WebView for embedded video and TV websites -->
+        <!-- Web video player -->
         <activity
             android:name=".InAppWebActivity"
             android:exported="false"
+            android:screenOrientation="sensor"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:hardwareAccelerated="true"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
+            android:theme="@android:style/Theme.Material.NoActionBar" />
 
     </application>
 
