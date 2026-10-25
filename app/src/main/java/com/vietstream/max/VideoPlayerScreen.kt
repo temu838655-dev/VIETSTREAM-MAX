@@ -1,3 +1,4 @@
+
 package com.vietstream.max
 
 import android.os.Bundle
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -142,8 +144,7 @@ fun InAppVideoPlayerScreen(
             player.prepare()
             player.playWhenReady = true
         } catch (error: Exception) {
-            playbackError =
-                error.message ?: "Không thể tải video."
+            playbackError = error.message ?: "Không thể tải video."
             isBuffering = false
         }
     }
@@ -153,7 +154,6 @@ fun InAppVideoPlayerScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -190,7 +190,7 @@ fun InAppVideoPlayerScreen(
                     .aspectRatio(16f / 9f),
                 factory = { viewContext ->
                     PlayerView(viewContext).apply {
-                        player = this@rememberPlayer
+                        this.player = player
                         useController = true
                         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                         setShowBuffering(
