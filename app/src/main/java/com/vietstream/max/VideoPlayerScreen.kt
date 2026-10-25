@@ -1,3 +1,4 @@
+
 package com.vietstream.max
 
 import android.os.Bundle
@@ -14,7 +15,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -23,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,7 +86,7 @@ class InAppPlayerActivity : ComponentActivity() {
     }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 fun InAppVideoPlayerScreen(
     title: String,
     streamUrl: String,
@@ -93,19 +94,26 @@ fun InAppVideoPlayerScreen(
 ) {
     val context = LocalContext.current
 
-    var playbackError by remember { mutableStateOf<String?>(null) }
-    var isBuffering by remember { mutableStateOf(true) }
+    var playbackError by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var isBuffering by remember {
+        mutableStateOf(true)
+    }
 
     val player = remember(context) {
-        ExoPlayer.Builder(context).build().apply {
-            setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                    .build(),
-                true
-            )
-        }
+        ExoPlayer.Builder(context)
+            .build()
+            .apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(C.USAGE_MEDIA)
+                        .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                        .build(),
+                    true
+                )
+            }
     }
 
     BackHandler {
@@ -120,8 +128,8 @@ fun InAppVideoPlayerScreen(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                playbackError =
-                    error.message ?: "Không thể phát video này."
+                playbackError = error.message
+                    ?: "Không thể phát video này."
                 isBuffering = false
             }
         }
@@ -143,7 +151,8 @@ fun InAppVideoPlayerScreen(
             player.prepare()
             player.playWhenReady = true
         } catch (error: Exception) {
-            playbackError = error.message ?: "Không thể tải video."
+            playbackError = error.message
+                ?: "Không thể tải video."
             isBuffering = false
         }
     }
@@ -153,6 +162,7 @@ fun InAppVideoPlayerScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
