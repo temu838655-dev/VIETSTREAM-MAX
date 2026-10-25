@@ -1,3 +1,4 @@
+
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -19,6 +20,7 @@
         android:label="VIETSTREAM MAX"
         android:usesCleartextTraffic="false"
         android:supportsRtl="true"
+        android:hardwareAccelerated="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
         <!-- Main application screen -->
@@ -32,6 +34,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Android TV launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
@@ -39,11 +42,19 @@
 
         </activity>
 
-        <!-- In-app video player -->
+        <!-- In-app Media3 video player -->
         <activity
             android:name=".InAppPlayerActivity"
             android:exported="false"
-            android:screenOrientation="sensor" />
+            android:screenOrientation="sensor"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- In-app WebView for embedded video and TV websites -->
+        <activity
+            android:name=".InAppWebActivity"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
 
     </application>
 
