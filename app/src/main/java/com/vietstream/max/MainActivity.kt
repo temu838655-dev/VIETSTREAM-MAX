@@ -1,3 +1,4 @@
+
 package com.vietstream.max
 
 import android.content.Intent
@@ -10,7 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items as columnItems
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -40,9 +41,6 @@ private val Red = Color(0xFFE50914)
 private val White = Color(0xFFF5F5F5)
 private val Gray = Color(0xFFAAAAAA)
 
-private const val TEST_VIDEO_URL =
-    "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
-
 data class Movie(
     val name: String,
     val slug: String,
@@ -50,6 +48,18 @@ data class Movie(
     val year: String,
     val origin: String,
     val description: String = ""
+)
+
+data class EpisodeSource(
+    val name: String,
+    val slug: String,
+    val m3u8: String,
+    val embed: String
+)
+
+data class EpisodeServer(
+    val name: String,
+    val episodes: List<EpisodeSource>
 )
 
 interface MovieApi {
@@ -68,8 +78,11 @@ interface MovieApi {
         @Query("limit") limit: Int = 30
     ): JsonObject
 
-    @GET("v1/api/phim/{slug}")
-    suspend fun detail(@Path("slug") slug: String): JsonObject
+    // Endpoint chi tiết phim có episodes/server_data
+    @GET("phim/{slug}")
+    suspend fun detail(
+        @Path("slug") slug: String
+    ): JsonObject
 }
 
 object MovieService {
@@ -84,7 +97,9 @@ object MovieService {
 
 fun jsonText(obj: JsonObject, key: String): String {
     return try {
-        obj.get(key)?.takeIf { !it.isJsonNull }?.asString ?: ""
+        obj.get(key)
+            ?.takeIf { !it.isJsonNull }
+            ?.asString ?: ""
     } catch (_: Exception) {
         ""
     }
@@ -108,31 +123,78 @@ fun parseMovies(root: JsonObject): List<Movie> {
     } ?: return emptyList()
 
     val imageRoot = jsonText(root, "pathImage")
-        .ifBlank { "https://phimapi.com/uploads/movies/" }
+        .ifBlank {
+            "https://phimapi.com/uploads/movies/"
+        }
 
     return items.mapNotNull { element ->
         try {
             val item = element.asJsonObject
             val name = jsonText(item, "name")
             val slug = jsonText(item, "slug")
-            val posterRaw = jsonText(item, "poster_url")
-                .ifBlank { jsonText(item, "thumb_url") }
+
+            val rawPoster = jsonText(item, "poster_url")
+                .ifBlank {
+                    jsonText(item, "thumb_url")
+                }
 
             val poster = when {
-                posterRaw.startsWith("http") -> posterRaw
-                posterRaw.isNotBlank() -> imageRoot + posterRaw
+                rawPoster.startsWith("http") -> rawPoster
+                rawPoster.isNotBlank() -> "$imageRoot$rawPoster"
                 else -> ""
             }
 
-            if (name.isBlank() || slug.isBlank()) null
-            else Movie(
-                name = name,
-                slug = slug,
-                poster = poster,
-                year = jsonText(item, "year"),
-                origin = jsonText(item, "origin_name"),
-                description = jsonText(item, "content")
-            )
+            if (name.isBlank() || slug.isBlank()) {
+                null
+            } else {
+                Movie(
+                    name = name,
+                    slug = slug,
+                    poster = poster,
+                    year = jsonText(item, "year"),
+                    origin = jsonText(item, "origin_name"),
+                    description = jsonText(item, "content")
+                )
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+fun parseEpisodeServers(root: JsonObject): List<EpisodeServer> {
+    val episodes = try {
+        root.getAsJsonArray("episodes")
+    } catch (_: Exception) {
+        null
+    } ?: return emptyList()
+
+    return episodes.mapNotNull { serverElement ->
+        try {
+            val server = serverElement.asJsonObject
+            val serverName = jsonText(server, "server_name")
+                .ifBlank { "Máy chủ" }
+
+            val serverData = server.getAsJsonArray("server_data")
+
+            val parsedEpisodes = serverData.mapNotNull { episodeElement ->
+                try {
+                    val episode = episodeElement.asJsonObject
+
+                    EpisodeSource(
+                        name = jsonText(episode, "name"),
+                        slug = jsonText(episode, "slug"),
+                        m3u8 = jsonText(episode, "link_m3u8"),
+                        embed = jsonText(episode, "link_embed")
+                    )
+                } catch (_: Exception) {
+                    null
+                }
+            }
+
+            if (parsedEpisodes.isEmpty()) null
+            else EpisodeServer(serverName, parsedEpisodes)
+
         } catch (_: Exception) {
             null
         }
@@ -167,7 +229,7 @@ private val officialChannels = listOf(
     ),
     TvChannel(
         "Vietnam Today", "Việt Nam", "Tin tức",
-        "Kênh đối ngoại quốc gia bằng tiếng Anh",
+        "Kênh đối ngoại quốc gia",
         "https://vietnamtoday.vtv.vn/"
     ),
     TvChannel(
@@ -211,16 +273,11 @@ fun LiveTvScreen() {
 
     val regions = listOf("Tất cả", "Việt Nam", "Quốc tế")
 
-    val filteredChannels = officialChannels.filter { channel ->
-        val regionMatches =
-            selectedRegion == "Tất cả" ||
-                channel.country == selectedRegion
-
-        val searchMatches =
-            channel.name.contains(search, ignoreCase = true) ||
-                channel.category.contains(search, ignoreCase = true)
-
-        regionMatches && searchMatches
+    val filtered = officialChannels.filter {
+        (selectedRegion == "Tất cả" ||
+            it.country == selectedRegion) &&
+            (it.name.contains(search, true) ||
+                it.category.contains(search, true))
     }
 
     Column(
@@ -246,12 +303,12 @@ fun LiveTvScreen() {
         )
 
         Text(
-            "Việt Nam • Quốc tế • Nguồn xem chính thức",
+            "Việt Nam • Quốc tế",
             color = Gray,
             fontSize = 13.sp
         )
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
 
         OutlinedTextField(
             value = search,
@@ -259,18 +316,9 @@ fun LiveTvScreen() {
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             placeholder = {
-                Text("Tìm tên kênh truyền hình...")
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = White,
-                unfocusedTextColor = White,
-                focusedBorderColor = Red,
-                unfocusedBorderColor = Gray,
-                cursorColor = Red
-            )
+                Text("Tìm tên kênh...")
+            }
         )
-
-        Spacer(Modifier.height(12.dp))
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -279,133 +327,85 @@ fun LiveTvScreen() {
                 FilterChip(
                     selected = selectedRegion == region,
                     onClick = { selectedRegion = region },
-                    label = { Text(region) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Red,
-                        selectedLabelColor = Color.White,
-                        labelColor = White
-                    )
+                    label = { Text(region) }
                 )
             }
         }
 
-        Spacer(Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
         ) {
-            Text(
-                "DANH SÁCH KÊNH",
-                color = White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp
-            )
-
-            Text(
-                "${filteredChannels.size} kênh",
-                color = Gray,
-                fontSize = 12.sp
-            )
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        if (filteredChannels.isEmpty()) {
-            Text(
-                "Không tìm thấy kênh phù hợp.",
-                color = Gray,
-                modifier = Modifier.padding(20.dp)
-            )
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 20.dp)
-            ) {
-                columnItems(filteredChannels) { channel ->
-                    TvChannelCard(channel = channel) {
-                        try {
-                            context.startActivity(
-                                Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse(channel.url)
-                                )
-                            )
-                        } catch (_: Exception) {
-                            Toast.makeText(
+            items(filtered) { channel ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Panel,
+                            RoundedCornerShape(12.dp)
+                        )
+                        .clickable {
+                            val intent = Intent(
                                 context,
-                                "Không thể mở nguồn xem kênh.",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                                InAppWebActivity::class.java
+                            ).apply {
+                                putExtra("web_title", channel.name)
+                                putExtra("web_url", channel.url)
+                            }
+
+                            context.startActivity(intent)
                         }
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .background(
+                                Color(0xFF303030),
+                                RoundedCornerShape(10.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            channel.name.take(3).uppercase(),
+                            color = Red,
+                            fontWeight = FontWeight.Black
+                        )
                     }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            channel.name,
+                            color = White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "${channel.country} • ${channel.category}",
+                            color = Red,
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            channel.description,
+                            color = Gray,
+                            fontSize = 11.sp,
+                            maxLines = 2
+                        )
+                    }
+
+                    Text("▶", color = Red, fontSize = 20.sp)
                 }
             }
         }
     }
 }
 
-@Composable
-private fun TvChannelCard(
-    channel: TvChannel,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Panel, RoundedCornerShape(12.dp))
-            .clickable { onClick() }
-            .padding(13.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(55.dp)
-                .background(
-                    Color(0xFF303030),
-                    RoundedCornerShape(10.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                channel.name.take(3).uppercase(),
-                color = Red,
-                fontWeight = FontWeight.Black,
-                fontSize = 17.sp
-            )
-        }
-
-        Spacer(Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                channel.name,
-                color = White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
-            )
-
-            Text(
-                "${channel.country} • ${channel.category}",
-                color = Red,
-                fontSize = 11.sp
-            )
-
-            Text(
-                channel.description,
-                color = Gray,
-                fontSize = 11.sp,
-                maxLines = 2
-            )
-        }
-
-        Text("▶", color = Red, fontSize = 20.sp)
-    }
-}
-
 // ---------------- MAIN ACTIVITY ----------------
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -431,10 +431,17 @@ fun VietStreamApp() {
     var tab by remember { mutableStateOf("Trang chủ") }
     var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
     var selected by remember { mutableStateOf<Movie?>(null) }
+
     var keyword by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+
     var detailText by remember { mutableStateOf("") }
+    var episodeServers by remember {
+        mutableStateOf<List<EpisodeServer>>(emptyList())
+    }
+
+    var selectedServer by remember { mutableIntStateOf(0) }
 
     suspend fun loadMovies(section: String) {
         loading = true
@@ -442,10 +449,17 @@ fun VietStreamApp() {
 
         try {
             val response = when (section) {
-                "Phim lẻ" -> MovieService.api.list("phim-le")
-                "Phim bộ" -> MovieService.api.list("phim-bo")
-                "Hoạt hình" -> MovieService.api.list("hoat-hinh")
-                else -> MovieService.api.home()
+                "Phim lẻ" ->
+                    MovieService.api.list("phim-le")
+
+                "Phim bộ" ->
+                    MovieService.api.list("phim-bo")
+
+                "Hoạt hình" ->
+                    MovieService.api.list("hoat-hinh")
+
+                else ->
+                    MovieService.api.home()
             }
 
             movies = parseMovies(response)
@@ -453,8 +467,8 @@ fun VietStreamApp() {
             if (movies.isEmpty()) {
                 error = "Nguồn dữ liệu chưa trả về danh sách phim."
             }
-        } catch (_: Exception) {
-            error = "Không thể tải dữ liệu. Hãy kiểm tra mạng và thử lại."
+        } catch (e: Exception) {
+            error = "Không thể tải phim: ${e.message ?: "Lỗi kết nối"}"
         }
 
         loading = false
@@ -468,31 +482,39 @@ fun VietStreamApp() {
 
     LaunchedEffect(selected?.slug) {
         val movie = selected ?: return@LaunchedEffect
-        detailText = "Đang tải thông tin..."
+
+        detailText = "Đang tải thông tin phim..."
+        episodeServers = emptyList()
+        selectedServer = 0
 
         try {
             val response = MovieService.api.detail(movie.slug)
-            val data = try {
-                response.getAsJsonObject("data")
+
+            val movieInfo = try {
+                response.getAsJsonObject("movie")
             } catch (_: Exception) {
                 null
             }
 
-            val item = try {
-                data?.getAsJsonObject("item")
-            } catch (_: Exception) {
-                null
-            }
-
-            detailText = item?.let {
+            detailText = movieInfo?.let {
                 jsonText(it, "content")
             }.orEmpty()
                 .replace(Regex("<[^>]*>"), " ")
                 .replace("&nbsp;", " ")
                 .trim()
-                .ifBlank { "Chưa có giới thiệu cho phim này." }
-        } catch (_: Exception) {
-            detailText = "Chưa tải được phần giới thiệu phim."
+                .ifBlank {
+                    "Chưa có giới thiệu cho phim này."
+                }
+
+            episodeServers = parseEpisodeServers(response)
+
+            if (episodeServers.isEmpty()) {
+                detailText += "\n\nAPI chưa trả về danh sách tập hoặc máy chủ phát."
+            }
+
+        } catch (e: Exception) {
+            detailText = "Không tải được chi tiết phim: ${e.message}"
+            episodeServers = emptyList()
         }
     }
 
@@ -535,6 +557,7 @@ fun VietStreamApp() {
             }
         }
     ) { padding ->
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -570,20 +593,13 @@ fun VietStreamApp() {
             if (tab == "Live TV") {
                 LiveTvScreen()
             } else {
+
                 if (tab == "Trang chủ") {
                     Text(
                         "Giải trí không giới hạn",
                         color = White,
                         fontSize = 23.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(
-                            horizontal = 18.dp,
-                            vertical = 5.dp
-                        )
-                    )
-                    Text(
-                        "Khám phá phim mới mỗi ngày",
-                        color = Gray,
                         modifier = Modifier.padding(horizontal = 18.dp)
                     )
                 }
@@ -613,11 +629,12 @@ fun VietStreamApp() {
                                                         keyword.trim()
                                                     )
                                                 )
+
                                                 if (movies.isEmpty()) {
                                                     error = "Không tìm thấy phim."
                                                 }
-                                            } catch (_: Exception) {
-                                                error = "Tìm kiếm thất bại. Hãy thử lại."
+                                            } catch (e: Exception) {
+                                                error = "Tìm kiếm thất bại: ${e.message}"
                                             }
 
                                             loading = false
@@ -627,12 +644,7 @@ fun VietStreamApp() {
                             ) {
                                 Text("Tìm", color = Red)
                             }
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = White,
-                            unfocusedTextColor = White,
-                            focusedBorderColor = Red
-                        )
+                        }
                     )
                 } else {
                     Row(
@@ -715,70 +727,160 @@ fun VietStreamApp() {
                 )
             },
             text = {
-                Column {
+                Column(
+                    modifier = Modifier.heightIn(max = 540.dp)
+                ) {
                     if (movie.poster.isNotBlank()) {
                         AsyncImage(
                             model = movie.poster,
                             contentDescription = movie.name,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(190.dp),
+                                .height(160.dp),
                             contentScale = ContentScale.Crop
                         )
                     }
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
 
                     Text(
                         "${movie.origin} • ${movie.year}",
                         color = Red
                     )
 
-                    Spacer(Modifier.height(8.dp))
-
                     Text(
                         detailText,
                         color = White,
-                        fontSize = 13.sp
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = 8.dp)
                     )
+
+                    Divider(color = Gray.copy(alpha = 0.3f))
+
+                    Text(
+                        "CHỌN MÁY CHỦ VÀ TẬP PHIM",
+                        color = Red,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+
+                    if (episodeServers.isEmpty()) {
+                        Text(
+                            "Chưa có tập phim khả dụng.",
+                            color = Gray,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        episodeServers.forEachIndexed { serverIndex, server ->
+                            Text(
+                                server.name,
+                                color = White,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(vertical = 5.dp)
+                            )
+
+                            server.episodes.forEach { episode ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp)
+                                        .background(
+                                            Color(0xFF292929),
+                                            RoundedCornerShape(7.dp)
+                                        )
+                                        .clickable {
+                                            val videoUrl = episode.m3u8
+                                            val embedUrl = episode.embed
+
+                                            try {
+                                                if (videoUrl.startsWith("https://") ||
+                                                    videoUrl.startsWith("http://")
+                                                ) {
+                                                    val intent = Intent(
+                                                        context,
+                                                        InAppPlayerActivity::class.java
+                                                    ).apply {
+                                                        putExtra(
+                                                            "video_title",
+                                                            "${movie.name} - ${episode.name}"
+                                                        )
+                                                        putExtra(
+                                                            "video_url",
+                                                            videoUrl
+                                                        )
+                                                    }
+
+                                                    context.startActivity(intent)
+                                                    selected = null
+
+                                                } else if (
+                                                    embedUrl.startsWith("https://") ||
+                                                    embedUrl.startsWith("http://")
+                                                ) {
+                                                    val intent = Intent(
+                                                        context,
+                                                        InAppWebActivity::class.java
+                                                    ).apply {
+                                                        putExtra(
+                                                            "web_title",
+                                                            "${movie.name} - ${episode.name}"
+                                                        )
+                                                        putExtra(
+                                                            "web_url",
+                                                            embedUrl
+                                                        )
+                                                    }
+
+                                                    context.startActivity(intent)
+                                                    selected = null
+
+                                                } else {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Tập này chưa có đường dẫn phát.",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            } catch (e: Exception) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Không thể mở tập phim.",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "▶",
+                                        color = Red
+                                    )
+
+                                    Spacer(Modifier.width(9.dp))
+
+                                    Text(
+                                        episode.name.ifBlank { "Tập phim" },
+                                        color = White,
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    Text(
+                                        "Xem",
+                                        color = Red,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
-                Row {
-                    TextButton(
-                        onClick = { selected = null }
-                    ) {
-                        Text("Đóng", color = Gray)
-                    }
-
-                    TextButton(
-                        onClick = {
-                            val intent = Intent(
-                                context,
-                                InAppPlayerActivity::class.java
-                            ).apply {
-                                putExtra("video_title", movie.name)
-                                putExtra("video_url", TEST_VIDEO_URL)
-                            }
-
-                            try {
-                                context.startActivity(intent)
-                                selected = null
-                            } catch (_: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    "Không thể mở trình phát.",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
-                    ) {
-                        Text(
-                            "▶ PHÁT NGAY",
-                            color = Red,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                TextButton(onClick = { selected = null }) {
+                    Text("Đóng", color = Red)
                 }
             }
         )
