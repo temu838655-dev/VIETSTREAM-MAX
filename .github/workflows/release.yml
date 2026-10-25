@@ -1,0 +1,62 @@
+name: VIETSTREAM MAX Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release version
+        required: true
+        default: v1.0.0
+
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build APK
+        run: |
+          gradle clean assembleDebug assembleRelease
+
+      - name: Prepare APK
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk release/VIETSTREAM-MAX-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk release/VIETSTREAM-MAX.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: VIETSTREAM-MAX-APK
+          path: release/*.apk
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          name: VIETSTREAM MAX ${{ github.event.inputs.release_tag || github.ref_name }}
+          generate_release_notes: true
+          files: release/*.apk
