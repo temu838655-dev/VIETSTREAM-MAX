@@ -1,3 +1,4 @@
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,6 +13,7 @@ android {
         applicationId = "com.vietstream.max"
         minSdk = 23
         targetSdk = 35
+
         versionCode = 1
         versionName = "1.0.0"
     }
@@ -19,15 +21,16 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
         }
 
         release {
-            isMinifyEnabled = true
+            // Ưu tiên ổn định ở bản APK đầu tiên.
+            isMinifyEnabled = false
+            isShrinkResources = false
+
+            // Chữ ký debug chỉ dùng cho APK cài thử.
             signingConfig = signingConfigs.getByName("debug")
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
         }
     }
 
@@ -43,10 +46,16 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
-    // Compose
+    // Jetpack Compose
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
 
@@ -57,31 +66,31 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Android core và lifecycle
+    // Android Core
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
 
-    // Video player: HLS, DASH và phát video
+    // Media3 - Video Player
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.5.1")
 
-    // Ảnh poster và ảnh nền
+    // Image Loading
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // Kết nối API phim
+    // Movie API
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.google.code.gson:gson:2.11.0")
 
-    // Coroutine
+    // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    // Custom Tabs nếu mã nguồn có sử dụng
+    // Browser
     implementation("androidx.browser:browser:1.8.0")
 
-    // Công cụ debug Compose
+    // Compose Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
