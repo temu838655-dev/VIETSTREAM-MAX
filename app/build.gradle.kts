@@ -15,20 +15,24 @@ android {
 
         versionCode = 1
         versionName = "1.0.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
 
         release {
-            // Ưu tiên ổn định ở bản APK đầu tiên.
             isMinifyEnabled = false
             isShrinkResources = false
 
-            // Chữ ký debug chỉ dùng cho APK cài thử.
+            // Chỉ dùng để thử nghiệm và cài APK.
+            // Khi phát hành chính thức cần dùng keystore riêng.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -54,7 +58,7 @@ android {
 }
 
 dependencies {
-    // Jetpack Compose
+    // Compose
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
 
@@ -65,21 +69,22 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Android Core
+    // AndroidX
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.browser:browser:1.8.0")
 
-    // Media3 - Video Player
+    // Media3 Player
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.5.1")
 
-    // Image Loading
+    // Image loading
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // Movie API
+    // API and JSON
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.google.code.gson:gson:2.11.0")
@@ -87,9 +92,6 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    // Browser
-    implementation("androidx.browser:browser:1.8.0")
-
-    // Compose Debug
+    // Debug tools
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
