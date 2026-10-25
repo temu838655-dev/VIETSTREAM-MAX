@@ -1,3 +1,4 @@
+
 package com.vietstream.max
 
 import android.content.Intent
@@ -39,6 +40,9 @@ private val Panel = Color(0xFF191919)
 private val Red = Color(0xFFE50914)
 private val White = Color(0xFFF5F5F5)
 private val Gray = Color(0xFFAAAAAA)
+
+private const val TEST_VIDEO_URL =
+    "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
 
 data class Movie(
     val name: String,
@@ -148,65 +152,47 @@ data class TvChannel(
 
 private val officialChannels = listOf(
     TvChannel(
-        "VTV1",
-        "Việt Nam",
-        "Tin tức",
+        "VTV1", "Việt Nam", "Tin tức",
         "Kênh thời sự và chính luận của VTV",
         "https://vtv.vn/truyen-hinh-truc-tuyen/vtv1.htm"
     ),
     TvChannel(
-        "VTVgo",
-        "Việt Nam",
-        "Tổng hợp",
+        "VTVgo", "Việt Nam", "Tổng hợp",
         "Nền tảng truyền hình trực tuyến chính thức của VTV",
         "https://vtvgo.vn/"
     ),
     TvChannel(
-        "VTV4",
-        "Việt Nam",
-        "Quốc tế",
+        "VTV4", "Việt Nam", "Quốc tế",
         "Kênh truyền hình đối ngoại Việt Nam",
         "https://vtv4.vtv.vn/xem-vtv4-moi-luc-moi-noi.html"
     ),
     TvChannel(
-        "Vietnam Today",
-        "Việt Nam",
-        "Tin tức",
+        "Vietnam Today", "Việt Nam", "Tin tức",
         "Kênh đối ngoại quốc gia bằng tiếng Anh",
         "https://vietnamtoday.vtv.vn/"
     ),
     TvChannel(
-        "Al Jazeera English",
-        "Quốc tế",
-        "Tin tức",
+        "Al Jazeera English", "Quốc tế", "Tin tức",
         "Tin tức quốc tế trực tiếp",
         "https://www.aljazeera.com/video/live"
     ),
     TvChannel(
-        "TRT World",
-        "Quốc tế",
-        "Tin tức",
+        "TRT World", "Quốc tế", "Tin tức",
         "Tin tức thế giới",
         "https://www.trtworld.com/live"
     ),
     TvChannel(
-        "France 24",
-        "Quốc tế",
-        "Tin tức",
+        "France 24", "Quốc tế", "Tin tức",
         "Kênh tin tức quốc tế của Pháp",
         "https://www.france24.com/en/live"
     ),
     TvChannel(
-        "DW News",
-        "Quốc tế",
-        "Tin tức",
+        "DW News", "Quốc tế", "Tin tức",
         "Kênh tin tức quốc tế của Đức",
         "https://www.dw.com/en/live-tv/s-100825"
     ),
     TvChannel(
-        "NHK World-Japan",
-        "Quốc tế",
-        "Tin tức",
+        "NHK World-Japan", "Quốc tế", "Tin tức",
         "Truyền hình quốc tế Nhật Bản",
         "https://www3.nhk.or.jp/nhkworld/en/live/"
     )
@@ -229,11 +215,11 @@ fun LiveTvScreen() {
     val filteredChannels = officialChannels.filter { channel ->
         val regionMatches =
             selectedRegion == "Tất cả" ||
-            channel.country == selectedRegion
+                channel.country == selectedRegion
 
         val searchMatches =
             channel.name.contains(search, ignoreCase = true) ||
-            channel.category.contains(search, ignoreCase = true)
+                channel.category.contains(search, ignoreCase = true)
 
         regionMatches && searchMatches
     }
@@ -340,11 +326,12 @@ fun LiveTvScreen() {
                 columnItems(filteredChannels) { channel ->
                     TvChannelCard(channel = channel) {
                         try {
-                            val intent = Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse(channel.url)
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse(channel.url)
+                                )
                             )
-                            context.startActivity(intent)
                         } catch (_: Exception) {
                             Toast.makeText(
                                 context,
@@ -367,10 +354,7 @@ private fun TvChannelCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                Panel,
-                RoundedCornerShape(12.dp)
-            )
+            .background(Panel, RoundedCornerShape(12.dp))
             .clickable { onClick() }
             .padding(13.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -394,9 +378,7 @@ private fun TvChannelCard(
 
         Spacer(Modifier.width(12.dp))
 
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 channel.name,
                 color = White,
@@ -418,11 +400,7 @@ private fun TvChannelCard(
             )
         }
 
-        Text(
-            "▶",
-            color = Red,
-            fontSize = 20.sp
-        )
+        Text("▶", color = Red, fontSize = 20.sp)
     }
 }
 
@@ -448,35 +426,16 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun VietStreamApp() {
-    var tab by remember {
-        mutableStateOf("Trang chủ")
-    }
-
-    var movies by remember {
-        mutableStateOf<List<Movie>>(emptyList())
-    }
-
-    var selected by remember {
-        mutableStateOf<Movie?>(null)
-    }
-
-    var keyword by remember {
-        mutableStateOf("")
-    }
-
-    var loading by remember {
-        mutableStateOf(false)
-    }
-
-    var error by remember {
-        mutableStateOf("")
-    }
-
-    var detailText by remember {
-        mutableStateOf("")
-    }
-
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    var tab by remember { mutableStateOf("Trang chủ") }
+    var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
+    var selected by remember { mutableStateOf<Movie?>(null) }
+    var keyword by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    var detailText by remember { mutableStateOf("") }
 
     suspend fun loadMovies(section: String) {
         loading = true
@@ -510,12 +469,10 @@ fun VietStreamApp() {
 
     LaunchedEffect(selected?.slug) {
         val movie = selected ?: return@LaunchedEffect
-
         detailText = "Đang tải thông tin..."
 
         try {
             val response = MovieService.api.detail(movie.slug)
-
             val data = try {
                 response.getAsJsonObject("data")
             } catch (_: Exception) {
@@ -528,17 +485,13 @@ fun VietStreamApp() {
                 null
             }
 
-            val content = item?.let {
+            detailText = item?.let {
                 jsonText(it, "content")
             }.orEmpty()
-
-            detailText = content
                 .replace(Regex("<[^>]*>"), " ")
                 .replace("&nbsp;", " ")
                 .trim()
-                .ifBlank {
-                    "Chưa có giới thiệu cho phim này."
-                }
+                .ifBlank { "Chưa có giới thiệu cho phim này." }
         } catch (_: Exception) {
             detailText = "Chưa tải được phần giới thiệu phim."
         }
@@ -547,9 +500,7 @@ fun VietStreamApp() {
     Scaffold(
         containerColor = Black,
         bottomBar = {
-            NavigationBar(
-                containerColor = Panel
-            ) {
+            NavigationBar(containerColor = Panel) {
                 listOf(
                     "Trang chủ",
                     "Phim lẻ",
@@ -557,7 +508,6 @@ fun VietStreamApp() {
                     "Hoạt hình",
                     "Live TV"
                 ).forEach { item ->
-
                     NavigationBarItem(
                         selected = tab == item,
                         onClick = { tab = item },
@@ -574,11 +524,7 @@ fun VietStreamApp() {
                             )
                         },
                         label = {
-                            Text(
-                                item,
-                                fontSize = 9.sp,
-                                maxLines = 1
-                            )
+                            Text(item, fontSize = 9.sp, maxLines = 1)
                         },
                         colors = NavigationBarItemDefaults.colors(
                             selectedTextColor = White,
@@ -590,21 +536,16 @@ fun VietStreamApp() {
             }
         }
     ) { padding ->
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Black)
                 .padding(padding)
         ) {
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(
-                        horizontal = 18.dp,
-                        vertical = 14.dp
-                    ),
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -613,14 +554,12 @@ fun VietStreamApp() {
                     fontSize = 25.sp,
                     fontWeight = FontWeight.Black
                 )
-
                 Text(
                     "STREAM",
                     color = White,
                     fontSize = 25.sp,
                     fontWeight = FontWeight.Black
                 )
-
                 Text(
                     " MAX",
                     color = Red,
@@ -630,11 +569,8 @@ fun VietStreamApp() {
             }
 
             if (tab == "Live TV") {
-
                 LiveTvScreen()
-
             } else {
-
                 if (tab == "Trang chủ") {
                     Text(
                         "Giải trí không giới hạn",
@@ -646,22 +582,17 @@ fun VietStreamApp() {
                             vertical = 5.dp
                         )
                     )
-
                     Text(
                         "Khám phá phim mới mỗi ngày",
                         color = Gray,
-                        modifier = Modifier.padding(
-                            horizontal = 18.dp
-                        )
+                        modifier = Modifier.padding(horizontal = 18.dp)
                     )
                 }
 
                 if (tab == "Tìm kiếm") {
                     OutlinedTextField(
                         value = keyword,
-                        onValueChange = {
-                            keyword = it
-                        },
+                        onValueChange = { keyword = it },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp),
@@ -683,7 +614,6 @@ fun VietStreamApp() {
                                                         keyword.trim()
                                                     )
                                                 )
-
                                                 if (movies.isEmpty()) {
                                                     error = "Không tìm thấy phim."
                                                 }
@@ -709,16 +639,11 @@ fun VietStreamApp() {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(
-                                horizontal = 16.dp,
-                                vertical = 8.dp
-                            ),
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         TextButton(
-                            onClick = {
-                                tab = "Tìm kiếm"
-                            }
+                            onClick = { tab = "Tìm kiếm" }
                         ) {
                             Text("⌕ Tìm phim", color = Red)
                         }
@@ -726,9 +651,7 @@ fun VietStreamApp() {
                         Text(
                             "Phim mới cập nhật",
                             color = Gray,
-                            modifier = Modifier.align(
-                                Alignment.CenterVertically
-                            )
+                            modifier = Modifier.align(Alignment.CenterVertically)
                         )
                     }
                 }
@@ -783,9 +706,7 @@ fun VietStreamApp() {
 
     selected?.let { movie ->
         AlertDialog(
-            onDismissRequest = {
-                selected = null
-            },
+            onDismissRequest = { selected = null },
             containerColor = Panel,
             title = {
                 Text(
@@ -824,12 +745,41 @@ fun VietStreamApp() {
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        selected = null
+                Row {
+                    TextButton(
+                        onClick = { selected = null }
+                    ) {
+                        Text("Đóng", color = Gray)
                     }
-                ) {
-                    Text("Đóng", color = Red)
+
+                    TextButton(
+                        onClick = {
+                            val intent = Intent(
+                                context,
+                                InAppPlayerActivity::class.java
+                            ).apply {
+                                putExtra("video_title", movie.name)
+                                putExtra("video_url", TEST_VIDEO_URL)
+                            }
+
+                            try {
+                                context.startActivity(intent)
+                                selected = null
+                            } catch (_: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "Không thể mở trình phát.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    ) {
+                        Text(
+                            "▶ PHÁT NGAY",
+                            color = Red,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         )
@@ -844,9 +794,7 @@ fun MovieCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable {
-                onClick()
-            }
+            .clickable { onClick() }
     ) {
         AsyncImage(
             model = movie.poster.ifBlank { null },
@@ -854,10 +802,7 @@ fun MovieCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(230.dp)
-                .background(
-                    Panel,
-                    RoundedCornerShape(9.dp)
-                ),
+                .background(Panel, RoundedCornerShape(9.dp)),
             contentScale = ContentScale.Crop
         )
 
