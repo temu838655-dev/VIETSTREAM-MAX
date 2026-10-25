@@ -1,6 +1,8 @@
+
 package com.vietstream.max
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -13,6 +15,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,9 +53,7 @@ class InAppPlayerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.addFlags(
-            android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        )
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val title = intent.getStringExtra("video_title")
             ?: "VIETSTREAM MAX"
@@ -78,9 +80,7 @@ class InAppPlayerActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        window.clearFlags(
-            android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        )
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onDestroy()
     }
 }
@@ -93,9 +93,8 @@ fun InAppVideoPlayerScreen(
 ) {
     val context = LocalContext.current
 
-    var playbackError by remember {
-        mutableStateOf<String?>(null)
-    }
+    var playbackError by remember { mutableStateOf<String?>(null) }
+    var isBuffering by remember { mutableStateOf(true) }
 
     val player = remember(context) {
         ExoPlayer.Builder(context).build().apply {
@@ -115,9 +114,15 @@ fun InAppVideoPlayerScreen(
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                isBuffering = playbackState == Player.STATE_BUFFERING
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 playbackError =
                     error.message ?: "Không thể phát video này."
+                isBuffering = false
             }
         }
 
@@ -131,16 +136,16 @@ fun InAppVideoPlayerScreen(
 
     LaunchedEffect(streamUrl, player) {
         playbackError = null
+        isBuffering = true
 
         try {
-            player.setMediaItem(
-                MediaItem.fromUri(streamUrl)
-            )
+            player.setMediaItem(MediaItem.fromUri(streamUrl))
             player.prepare()
             player.playWhenReady = true
         } catch (error: Exception) {
             playbackError =
                 error.message ?: "Không thể tải video."
+            isBuffering = false
         }
     }
 
@@ -160,7 +165,7 @@ fun InAppVideoPlayerScreen(
         ) {
             IconButton(onClick = onBack) {
                 Icon(
-                    imageVector = androidx.compose.material.icons.Icons.Default.ArrowBack,
+                    imageVector = Icons.Filled.ArrowBack,
                     contentDescription = "Quay lại",
                     tint = Color.White
                 )
@@ -186,7 +191,7 @@ fun InAppVideoPlayerScreen(
                     .aspectRatio(16f / 9f),
                 factory = { viewContext ->
                     PlayerView(viewContext).apply {
-                        this.player = player
+                        player = this@rememberPlayer
                         useController = true
                         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                         setShowBuffering(
@@ -200,9 +205,7 @@ fun InAppVideoPlayerScreen(
                 }
             )
 
-            if (playbackError == null &&
-                player.playbackState == Player.STATE_BUFFERING
-            ) {
+            if (isBuffering && playbackError == null) {
                 CircularProgressIndicator(
                     color = Color(0xFFE50914)
                 )
