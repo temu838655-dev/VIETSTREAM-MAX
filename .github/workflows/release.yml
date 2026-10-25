@@ -26,27 +26,18 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK
-        run: |
-          sdkmanager "platform-tools"
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
-
-      - name: Check environment
+      - name: Check build environment
         run: |
           java -version
           gradle --version
-          echo "Android SDK: $ANDROID_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME"
 
       - name: Build Debug APK
         run: gradle --no-daemon :app:assembleDebug --stacktrace
@@ -54,19 +45,19 @@ jobs:
       - name: Build Release APK
         run: gradle --no-daemon :app:assembleRelease --stacktrace
 
-      - name: Verify APK
+      - name: Verify APK files
         run: |
           test -f app/build/outputs/apk/debug/app-debug.apk
           test -f app/build/outputs/apk/release/app-release.apk
 
-      - name: Rename APK
+      - name: Prepare APK files
         run: |
           mkdir -p release
           cp app/build/outputs/apk/debug/app-debug.apk release/VIETSTREAM-MAX-debug.apk
           cp app/build/outputs/apk/release/app-release.apk release/VIETSTREAM-MAX.apk
           ls -lh release/
 
-      - name: Upload APK
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: VIETSTREAM-MAX-APK
@@ -74,7 +65,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Create GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
