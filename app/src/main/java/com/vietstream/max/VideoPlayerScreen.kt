@@ -2,8 +2,10 @@ package com.vietstream.max
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -24,6 +26,7 @@ import androidx.media3.ui.PlayerView
 class InAppPlayerActivity : Activity() {
 
     private var player: ExoPlayer? = null
+
     private lateinit var playerView: PlayerView
     private lateinit var titleView: TextView
 
@@ -31,11 +34,17 @@ class InAppPlayerActivity : Activity() {
     private var urls = arrayListOf<String>()
     private var startIndex = 0
 
+    private var restoredPosition = 0L
+    private var finishedPlayback = false
+
     private val preferences by lazy {
         getSharedPreferences("vietstream_playback", MODE_PRIVATE)
     }
 
-    private var restoredPosition = 0L
+    private val isTv: Boolean
+        get() = packageManager.hasSystemFeature(
+            PackageManager.FEATURE_LEANBACK
+        ) || resources.configuration.smallestScreenWidthDp >= 600
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,13 +61,11 @@ class InAppPlayerActivity : Activity() {
         val singleUrl =
             intent.getStringExtra("video_url").orEmpty()
 
-        titles =
-            intent.getStringArrayListExtra("episode_titles")
-                ?: arrayListOf()
+        titles = intent.getStringArrayListExtra("episode_titles")
+            ?: arrayListOf()
 
-        urls =
-            intent.getStringArrayListExtra("episode_urls")
-                ?: arrayListOf()
+        urls = intent.getStringArrayListExtra("episode_urls")
+            ?: arrayListOf()
 
         startIndex = intent.getIntExtra("episode_index", 0)
 
@@ -67,13 +74,15 @@ class InAppPlayerActivity : Activity() {
             titles.add(singleTitle)
         }
 
-        // Loại bỏ các đường dẫn rỗng
         val validEpisodes = urls.mapIndexedNotNull { index, url ->
-            if (url.isBlank()) null
-            else Pair(
-                titles.getOrElse(index) { "Tập ${index + 1}" },
-                url
-            )
+            if (url.isBlank()) {
+                null
+            } else {
+                Pair(
+                    titles.getOrElse(index) { "Tập ${index + 1}" },
+                    url.trim()
+                )
+            }
         }
 
         urls = ArrayList(validEpisodes.map { it.second })
@@ -92,7 +101,6 @@ class InAppPlayerActivity : Activity() {
         startIndex = startIndex.coerceIn(0, urls.lastIndex)
 
         restoreLastPosition()
-
         buildInterface()
         initializePlayer()
     }
@@ -119,8 +127,7 @@ class InAppPlayerActivity : Activity() {
 
     private fun restoreLastPosition() {
         val lastUrl = preferences.getString("last_url", null)
-        val lastPosition =
-            preferences.getLong("last_position", 0L)
+        val lastPosition = preferences.getLong("last_position", 0L)
 
         if (lastUrl != null) {
             val savedIndex = urls.indexOf(lastUrl)
@@ -136,21 +143,30 @@ class InAppPlayerActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(android.graphics.Color.BLACK)
+            isFocusable = true
         }
 
         titleView = TextView(this).apply {
             text = titles.getOrElse(startIndex) {
                 "VIETSTREAM MAX"
             }
-            textSize = 16f
+
+            textSize = if (isTv) 22f else 16f
             setTextColor(android.graphics.Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(16, 12, 16, 12)
+            setPadding(
+                if (isTv) 28 else 16,
+                if (isTv) 18 else 12,
+                if (isTv) 28 else 16,
+                if (isTv) 18 else 12
+            )
+            maxLines = 1
         }
 
         playerView = PlayerView(this).apply {
             useController = true
             controllerAutoShow = true
+            controllerHideOnTouch = !isTv
 
             setShowBuffering(
                 PlayerView.SHOW_BUFFERING_WHEN_PLAYING
@@ -163,46 +179,52 @@ class InAppPlayerActivity : Activity() {
                 0,
                 1f
             )
+
+            isFocusable = true
+            isFocusableInTouchMode = true
         }
 
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(6, 8, 6, 8)
+            setPadding(
+                if (isTv) 20 else 6,
+                if (isTv) 14 else 8,
+                if (isTv) 20 else 6,
+                if (isTv) 14 else 8
+            )
             setBackgroundColor(
                 android.graphics.Color.rgb(15, 15, 15)
             )
         }
 
-        controls.addView(
-            makeButton("Tập trước") {
-                previousEpisode()
-            }
+        val buttonLabels = listOf(
+            "Tập trước",
+            "Tốc độ",
+            "Phụ đề",
+            "Tập tiếp"
         )
 
-        controls.addView(
-            makeButton("Tốc độ") {
-                showSpeedOptions()
-            }
+        val actions = listOf<() -> Unit>(
+            { previousEpisode() },
+            { showSpeedOptions() },
+            { showSubtitleOptions() },
+            { nextEpisode() }
         )
 
-        controls.addView(
-            makeButton("Phụ đề") {
-                showSubtitleOptions()
-            }
-        )
-
-        controls.addView(
-            makeButton("Tập tiếp") {
-                nextEpisode()
-            }
-        )
+        buttonLabels.forEachIndexed { index, label ->
+            controls.addView(
+                makeButton(label, actions[index])
+            )
+        }
 
         root.addView(titleView)
         root.addView(playerView)
         root.addView(controls)
 
         setContentView(root)
+
+        playerView.requestFocus()
     }
 
     private fun makeButton(
@@ -211,8 +233,11 @@ class InAppPlayerActivity : Activity() {
     ): Button {
         return Button(this).apply {
             text = label
+            textSize = if (isTv) 16f else 11f
             isFocusable = true
             isFocusableInTouchMode = true
+            minHeight = if (isTv) 64 else 48
+            minWidth = 0
 
             setOnClickListener {
                 action()
@@ -222,7 +247,10 @@ class InAppPlayerActivity : Activity() {
                 0,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 1f
-            )
+            ).apply {
+                marginStart = if (isTv) 8 else 2
+                marginEnd = if (isTv) 8 else 2
+            }
         }
     }
 
@@ -252,13 +280,13 @@ class InAppPlayerActivity : Activity() {
                     mediaItem: MediaItem?,
                     reason: Int
                 ) {
-                    val index =
-                        exoPlayer.currentMediaItemIndex
+                    finishedPlayback = false
 
-                    titleView.text =
-                        titles.getOrElse(index) {
-                            "Tập ${index + 1}"
-                        }
+                    val index = exoPlayer.currentMediaItemIndex
+
+                    titleView.text = titles.getOrElse(index) {
+                        "Tập ${index + 1}"
+                    }
 
                     saveProgress()
                 }
@@ -277,12 +305,8 @@ class InAppPlayerActivity : Activity() {
                     playbackState: Int
                 ) {
                     if (playbackState == Player.STATE_ENDED) {
-                        if (exoPlayer.hasNextMediaItem()) {
-                            exoPlayer.seekToNextMediaItem()
-                            exoPlayer.play()
-                        } else {
-                            saveProgress()
-                        }
+                        finishedPlayback = true
+                        clearFinishedProgress()
                     }
                 }
             }
@@ -318,38 +342,32 @@ class InAppPlayerActivity : Activity() {
             .setItems(speeds) { _, which ->
                 player?.setPlaybackSpeed(values[which])
             }
+            .setNegativeButton("Đóng", null)
             .show()
     }
 
     private fun showSubtitleOptions() {
         val exoPlayer = player ?: return
 
-        val subtitleTracks =
-            exoPlayer.currentTracks.groups.filter {
-                it.type == C.TRACK_TYPE_TEXT
-            }
+        val subtitleTracks = exoPlayer.currentTracks.groups.filter {
+            it.type == C.TRACK_TYPE_TEXT
+        }
 
         val options = mutableListOf("Tắt phụ đề")
         val selections = mutableListOf<Pair<Int, Int>>()
 
         subtitleTracks.forEachIndexed { groupIndex, group ->
-
             for (trackIndex in 0 until group.length) {
+                val format = group.getTrackFormat(trackIndex)
 
-                val format =
-                    group.getTrackFormat(trackIndex)
+                val language = format.language
+                    ?: "Không rõ ngôn ngữ"
 
-                val language =
-                    format.language ?: "Không rõ ngôn ngữ"
-
-                val label =
-                    format.label ?: "Phụ đề ${trackIndex + 1}"
+                val label = format.label
+                    ?: "Phụ đề ${trackIndex + 1}"
 
                 options.add("$language - $label")
-
-                selections.add(
-                    groupIndex to trackIndex
-                )
+                selections.add(groupIndex to trackIndex)
             }
         }
 
@@ -359,49 +377,42 @@ class InAppPlayerActivity : Activity() {
                 "Video hiện không có phụ đề tích hợp",
                 Toast.LENGTH_SHORT
             ).show()
+            return
         }
 
         AlertDialog.Builder(this)
             .setTitle("Chọn phụ đề")
             .setItems(options.toTypedArray()) { _, which ->
 
+                val builder = exoPlayer.trackSelectionParameters
+                    .buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+
                 if (which == 0) {
-
-                    exoPlayer.trackSelectionParameters =
-                        exoPlayer.trackSelectionParameters
-                            .buildUpon()
-                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                            .setTrackTypeDisabled(
-                                C.TRACK_TYPE_TEXT,
-                                true
-                            )
-                            .build()
-
+                    builder.setTrackTypeDisabled(
+                        C.TRACK_TYPE_TEXT,
+                        true
+                    )
                 } else {
-
-                    val (groupIndex, trackIndex) =
-                        selections[which - 1]
-
-                    val group =
-                        subtitleTracks[groupIndex]
+                    val (groupIndex, trackIndex) = selections[which - 1]
+                    val group = subtitleTracks[groupIndex]
 
                     val override = TrackSelectionOverride(
                         group.mediaTrackGroup,
                         listOf(trackIndex)
                     )
 
-                    exoPlayer.trackSelectionParameters =
-                        exoPlayer.trackSelectionParameters
-                            .buildUpon()
-                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                            .setTrackTypeDisabled(
-                                C.TRACK_TYPE_TEXT,
-                                false
-                            )
-                            .addOverride(override)
-                            .build()
+                    builder
+                        .setTrackTypeDisabled(
+                            C.TRACK_TYPE_TEXT,
+                            false
+                        )
+                        .addOverride(override)
                 }
+
+                exoPlayer.trackSelectionParameters = builder.build()
             }
+            .setNegativeButton("Đóng", null)
             .show()
     }
 
@@ -409,6 +420,7 @@ class InAppPlayerActivity : Activity() {
         val exoPlayer = player ?: return
 
         if (exoPlayer.hasPreviousMediaItem()) {
+            finishedPlayback = false
             exoPlayer.seekToPreviousMediaItem()
             exoPlayer.play()
         } else {
@@ -424,6 +436,7 @@ class InAppPlayerActivity : Activity() {
         val exoPlayer = player ?: return
 
         if (exoPlayer.hasNextMediaItem()) {
+            finishedPlayback = false
             exoPlayer.seekToNextMediaItem()
             exoPlayer.play()
         } else {
@@ -438,6 +451,11 @@ class InAppPlayerActivity : Activity() {
     private fun saveProgress() {
         val exoPlayer = player ?: return
 
+        if (finishedPlayback) {
+            clearFinishedProgress()
+            return
+        }
+
         val index = exoPlayer.currentMediaItemIndex
 
         if (index < 0 || index >= urls.size) return
@@ -449,15 +467,21 @@ class InAppPlayerActivity : Activity() {
                     "VIETSTREAM MAX"
                 }
             )
-            .putString(
-                "last_url",
-                urls.getOrNull(index)
-            )
+            .putString("last_url", urls[index])
             .putInt("last_index", index)
             .putLong(
                 "last_position",
-                exoPlayer.currentPosition
+                exoPlayer.currentPosition.coerceAtLeast(0L)
             )
+            .apply()
+    }
+
+    private fun clearFinishedProgress() {
+        preferences.edit()
+            .remove("last_title")
+            .remove("last_url")
+            .remove("last_index")
+            .remove("last_position")
             .apply()
     }
 
