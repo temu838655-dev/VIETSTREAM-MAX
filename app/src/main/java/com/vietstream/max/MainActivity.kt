@@ -1,7 +1,7 @@
+
 package com.vietstream.max
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -9,16 +9,18 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -34,7 +36,7 @@ import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
 
-private val Black = Color(0xFF090909)
+private val Black = Color(0xFF080808)
 private val Panel = Color(0xFF191919)
 private val Red = Color(0xFFE50914)
 private val White = Color(0xFFF5F5F5)
@@ -77,7 +79,6 @@ interface MovieApi {
         @Query("limit") limit: Int = 30
     ): JsonObject
 
-    // Endpoint chi tiết phim có episodes/server_data
     @GET("phim/{slug}")
     suspend fun detail(
         @Path("slug") slug: String
@@ -98,9 +99,22 @@ fun jsonText(obj: JsonObject, key: String): String {
     return try {
         obj.get(key)
             ?.takeIf { !it.isJsonNull }
-            ?.asString ?: ""
+            ?.asString
+            ?: ""
     } catch (_: Exception) {
         ""
+    }
+}
+
+private fun resolvePoster(raw: String, imageRoot: String): String {
+    val value = raw.trim()
+    if (value.isBlank()) return ""
+
+    return when {
+        value.startsWith("https://", true) -> value
+        value.startsWith("http://", true) -> value
+        value.startsWith("//") -> "https:$value"
+        else -> "${imageRoot.trimEnd('/')}/${value.trimStart('/')}"
     }
 }
 
@@ -122,26 +136,16 @@ fun parseMovies(root: JsonObject): List<Movie> {
     } ?: return emptyList()
 
     val imageRoot = jsonText(root, "pathImage")
-        .ifBlank {
-            "https://phimapi.com/uploads/movies/"
-        }
+        .ifBlank { jsonText(data ?: JsonObject(), "pathImage") }
+        .ifBlank { "https://phimapi.com/uploads/movies" }
 
     return items.mapNotNull { element ->
         try {
             val item = element.asJsonObject
             val name = jsonText(item, "name")
             val slug = jsonText(item, "slug")
-
             val rawPoster = jsonText(item, "poster_url")
-                .ifBlank {
-                    jsonText(item, "thumb_url")
-                }
-
-            val poster = when {
-                rawPoster.startsWith("http") -> rawPoster
-                rawPoster.isNotBlank() -> "$imageRoot$rawPoster"
-                else -> ""
-            }
+                .ifBlank { jsonText(item, "thumb_url") }
 
             if (name.isBlank() || slug.isBlank()) {
                 null
@@ -149,7 +153,7 @@ fun parseMovies(root: JsonObject): List<Movie> {
                 Movie(
                     name = name,
                     slug = slug,
-                    poster = poster,
+                    poster = resolvePoster(rawPoster, imageRoot),
                     year = jsonText(item, "year"),
                     origin = jsonText(item, "origin_name"),
                     description = jsonText(item, "content")
@@ -168,18 +172,17 @@ fun parseEpisodeServers(root: JsonObject): List<EpisodeServer> {
         null
     } ?: return emptyList()
 
-    return episodes.mapNotNull { serverElement ->
+    return episodes.mapNotNull { element ->
         try {
-            val server = serverElement.asJsonObject
+            val server = element.asJsonObject
             val serverName = jsonText(server, "server_name")
                 .ifBlank { "Máy chủ" }
 
             val serverData = server.getAsJsonArray("server_data")
 
-            val parsedEpisodes = serverData.mapNotNull { episodeElement ->
+            val parsed = serverData.mapNotNull { episodeElement ->
                 try {
                     val episode = episodeElement.asJsonObject
-
                     EpisodeSource(
                         name = jsonText(episode, "name"),
                         slug = jsonText(episode, "slug"),
@@ -191,9 +194,8 @@ fun parseEpisodeServers(root: JsonObject): List<EpisodeServer> {
                 }
             }
 
-            if (parsedEpisodes.isEmpty()) null
-            else EpisodeServer(serverName, parsedEpisodes)
-
+            if (parsed.isEmpty()) null
+            else EpisodeServer(serverName, parsed)
         } catch (_: Exception) {
             null
         }
@@ -261,105 +263,82 @@ private val officialChannels = listOf(
 @Composable
 fun LiveTvScreen() {
     val context = LocalContext.current
-
-    var selectedRegion by remember {
-        mutableStateOf("Tất cả")
-    }
-
-    var search by remember {
-        mutableStateOf("")
-    }
+    var region by remember { mutableStateOf("Tất cả") }
+    var search by remember { mutableStateOf("") }
 
     val regions = listOf("Tất cả", "Việt Nam", "Quốc tế")
-
     val filtered = officialChannels.filter {
-        (selectedRegion == "Tất cả" ||
-            it.country == selectedRegion) &&
+        (region == "Tất cả" || it.country == region) &&
             (it.name.contains(search, true) ||
                 it.category.contains(search, true))
     }
 
     Column(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
             .background(Black)
             .padding(horizontal = 16.dp)
     ) {
-        Spacer(Modifier.height(8.dp))
-
         Text(
-            "LIVE TV",
+            "TRUYỀN HÌNH TRỰC TUYẾN",
             color = Red,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold
         )
-
         Text(
-            "Truyền hình thế giới",
+            "Live TV",
             color = White,
-            fontSize = 25.sp,
-            fontWeight = FontWeight.Bold
+            fontSize = 27.sp,
+            fontWeight = FontWeight.Black
         )
-
-        Text(
-            "Việt Nam • Quốc tế",
-            color = Gray,
-            fontSize = 13.sp
-        )
-
-        Spacer(Modifier.height(12.dp))
 
         OutlinedTextField(
             value = search,
             onValueChange = { search = it },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            placeholder = {
-                Text("Tìm tên kênh...")
-            }
+            placeholder = { Text("Tìm tên kênh...") }
         )
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            regions.forEach { region ->
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            regions.forEach {
                 FilterChip(
-                    selected = selectedRegion == region,
-                    onClick = { selectedRegion = region },
-                    label = { Text(region) }
+                    selected = region == it,
+                    onClick = { region = it },
+                    label = { Text(it) }
                 )
             }
         }
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(vertical = 12.dp)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(filtered) { channel ->
+            filtered.forEach { channel ->
                 Row(
-                    modifier = Modifier
+                    Modifier
                         .fillMaxWidth()
-                        .background(
-                            Panel,
-                            RoundedCornerShape(12.dp)
-                        )
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Panel)
                         .clickable {
-                            val intent = Intent(
-                                context,
-                                InAppWebActivity::class.java
-                            ).apply {
-                                putExtra("web_title", channel.name)
-                                putExtra("web_url", channel.url)
-                            }
-
-                            context.startActivity(intent)
+                            context.startActivity(
+                                Intent(
+                                    context,
+                                    InAppWebActivity::class.java
+                                ).apply {
+                                    putExtra("web_title", channel.name)
+                                    putExtra("web_url", channel.url)
+                                }
+                            )
                         }
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
-                        modifier = Modifier
-                            .size(52.dp)
+                        Modifier
+                            .size(48.dp)
                             .background(
                                 Color(0xFF303030),
                                 RoundedCornerShape(10.dp)
@@ -389,12 +368,10 @@ fun LiveTvScreen() {
                         Text(
                             channel.description,
                             color = Gray,
-                            fontSize = 11.sp,
-                            maxLines = 2
+                            fontSize = 11.sp
                         )
                     }
-
-                    Text("▶", color = Red, fontSize = 20.sp)
+                    Text("▶", color = Red)
                 }
             }
         }
@@ -404,7 +381,6 @@ fun LiveTvScreen() {
 // ---------------- MAIN ACTIVITY ----------------
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -430,17 +406,13 @@ fun VietStreamApp() {
     var tab by remember { mutableStateOf("Trang chủ") }
     var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
     var selected by remember { mutableStateOf<Movie?>(null) }
-
     var keyword by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
-
     var detailText by remember { mutableStateOf("") }
     var episodeServers by remember {
         mutableStateOf<List<EpisodeServer>>(emptyList())
     }
-
-    var selectedServer by remember { mutableIntStateOf(0) }
 
     suspend fun loadMovies(section: String) {
         loading = true
@@ -448,21 +420,13 @@ fun VietStreamApp() {
 
         try {
             val response = when (section) {
-                "Phim lẻ" ->
-                    MovieService.api.list("phim-le")
-
-                "Phim bộ" ->
-                    MovieService.api.list("phim-bo")
-
-                "Hoạt hình" ->
-                    MovieService.api.list("hoat-hinh")
-
-                else ->
-                    MovieService.api.home()
+                "Phim lẻ" -> MovieService.api.list("phim-le")
+                "Phim bộ" -> MovieService.api.list("phim-bo")
+                "Hoạt hình" -> MovieService.api.list("hoat-hinh")
+                else -> MovieService.api.home()
             }
 
             movies = parseMovies(response)
-
             if (movies.isEmpty()) {
                 error = "Nguồn dữ liệu chưa trả về danh sách phim."
             }
@@ -484,36 +448,29 @@ fun VietStreamApp() {
 
         detailText = "Đang tải thông tin phim..."
         episodeServers = emptyList()
-        selectedServer = 0
 
         try {
             val response = MovieService.api.detail(movie.slug)
-
-            val movieInfo = try {
+            val info = try {
                 response.getAsJsonObject("movie")
             } catch (_: Exception) {
                 null
             }
 
-            detailText = movieInfo?.let {
-                jsonText(it, "content")
-            }.orEmpty()
+            detailText = info?.let { jsonText(it, "content") }
+                .orEmpty()
                 .replace(Regex("<[^>]*>"), " ")
                 .replace("&nbsp;", " ")
                 .trim()
-                .ifBlank {
-                    "Chưa có giới thiệu cho phim này."
-                }
+                .ifBlank { "Chưa có giới thiệu cho phim này." }
 
             episodeServers = parseEpisodeServers(response)
 
             if (episodeServers.isEmpty()) {
-                detailText += "\n\nAPI chưa trả về danh sách tập hoặc máy chủ phát."
+                detailText += "\n\nChưa có máy chủ hoặc tập phim khả dụng."
             }
-
         } catch (e: Exception) {
             detailText = "Không tải được chi tiết phim: ${e.message}"
-            episodeServers = emptyList()
         }
     }
 
@@ -522,11 +479,8 @@ fun VietStreamApp() {
         bottomBar = {
             NavigationBar(containerColor = Panel) {
                 listOf(
-                    "Trang chủ",
-                    "Phim lẻ",
-                    "Phim bộ",
-                    "Hoạt hình",
-                    "Live TV"
+                    "Trang chủ", "Phim lẻ", "Phim bộ",
+                    "Hoạt hình", "Live TV"
                 ).forEach { item ->
                     NavigationBarItem(
                         selected = tab == item,
@@ -556,53 +510,57 @@ fun VietStreamApp() {
             }
         }
     ) { padding ->
-
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .background(Black)
                 .padding(padding)
         ) {
             Row(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "VIET",
+                    "N",
                     color = Red,
-                    fontSize = 25.sp,
+                    fontSize = 32.sp,
                     fontWeight = FontWeight.Black
                 )
-                Text(
-                    "STREAM",
-                    color = White,
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Black
-                )
-                Text(
-                    " MAX",
-                    color = Red,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Row {
+                        Text(
+                            "VIET",
+                            color = Red,
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Text(
+                            "STREAM",
+                            color = White,
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                    Text(
+                        "MAX",
+                        color = Gray,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 3.sp
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { tab = "Tìm kiếm" }) {
+                    Text("⌕ Tìm kiếm", color = White)
+                }
             }
 
             if (tab == "Live TV") {
                 LiveTvScreen()
             } else {
-
-                if (tab == "Trang chủ") {
-                    Text(
-                        "Giải trí không giới hạn",
-                        color = White,
-                        fontSize = 23.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 18.dp)
-                    )
-                }
-
                 if (tab == "Tìm kiếm") {
                     OutlinedTextField(
                         value = keyword,
@@ -610,10 +568,10 @@ fun VietStreamApp() {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp),
-                        placeholder = {
-                            Text("Nhập tên phim cần tìm...")
-                        },
                         singleLine = true,
+                        placeholder = {
+                            Text("Nhập tên phim...")
+                        },
                         trailingIcon = {
                             TextButton(
                                 onClick = {
@@ -621,21 +579,18 @@ fun VietStreamApp() {
                                         scope.launch {
                                             loading = true
                                             error = ""
-
                                             try {
                                                 movies = parseMovies(
                                                     MovieService.api.search(
                                                         keyword.trim()
                                                     )
                                                 )
-
                                                 if (movies.isEmpty()) {
                                                     error = "Không tìm thấy phim."
                                                 }
                                             } catch (e: Exception) {
                                                 error = "Tìm kiếm thất bại: ${e.message}"
                                             }
-
                                             loading = false
                                         }
                                     }
@@ -645,23 +600,94 @@ fun VietStreamApp() {
                             }
                         }
                     )
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TextButton(
-                            onClick = { tab = "Tìm kiếm" }
-                        ) {
-                            Text("⌕ Tìm phim", color = Red)
-                        }
+                }
 
-                        Text(
-                            "Phim mới cập nhật",
-                            color = Gray,
-                            modifier = Modifier.align(Alignment.CenterVertically)
+                if (tab == "Trang chủ" && movies.isNotEmpty()) {
+                    val hero = movies.first()
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(225.dp)
+                            .padding(horizontal = 12.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { selected = hero }
+                    ) {
+                        AsyncImage(
+                            model = hero.poster,
+                            contentDescription = hero.name,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.95f)
+                                        )
+                                    )
+                                )
+                        )
+                        Column(
+                            Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                "VIETSTREAM MAX ORIGINAL",
+                                color = Red,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                hero.name,
+                                color = White,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Black,
+                                maxLines = 2
+                            )
+                            Text(
+                                "${hero.year} • ${hero.origin}",
+                                color = Gray,
+                                fontSize = 11.sp
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Button(
+                                onClick = { selected = hero },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Red
+                                )
+                            ) {
+                                Text("▶  Xem ngay")
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        when (tab) {
+                            "Trang chủ" -> "Phim mới cập nhật"
+                            "Tìm kiếm" -> "Kết quả tìm kiếm"
+                            else -> tab
+                        },
+                        color = White,
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Red,
+                            strokeWidth = 2.dp
                         )
                     }
                 }
@@ -671,7 +697,7 @@ fun VietStreamApp() {
                         Box(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(35.dp),
+                                .padding(24.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             CircularProgressIndicator(color = Red)
@@ -682,7 +708,7 @@ fun VietStreamApp() {
                         Text(
                             error,
                             color = Red,
-                            modifier = Modifier.padding(20.dp)
+                            modifier = Modifier.padding(18.dp)
                         )
                     }
 
@@ -690,17 +716,17 @@ fun VietStreamApp() {
                         Text(
                             "Chưa có dữ liệu phim.",
                             color = Gray,
-                            modifier = Modifier.padding(20.dp)
+                            modifier = Modifier.padding(18.dp)
                         )
                     }
 
                     else -> {
                         LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
+                            columns = GridCells.Adaptive(minSize = 145.dp),
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                            contentPadding = PaddingValues(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             gridItems(movies) { movie ->
                                 MovieCard(movie) {
@@ -727,7 +753,9 @@ fun VietStreamApp() {
             },
             text = {
                 Column(
-                    modifier = Modifier.heightIn(max = 540.dp)
+                    Modifier
+                        .heightIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
                     if (movie.poster.isNotBlank()) {
                         AsyncImage(
@@ -735,33 +763,31 @@ fun VietStreamApp() {
                             contentDescription = movie.name,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(160.dp),
+                                .height(180.dp)
+                                .clip(RoundedCornerShape(10.dp)),
                             contentScale = ContentScale.Crop
                         )
                     }
 
-                    Spacer(Modifier.height(8.dp))
-
                     Text(
                         "${movie.origin} • ${movie.year}",
-                        color = Red
+                        color = Red,
+                        modifier = Modifier.padding(vertical = 8.dp)
                     )
-
                     Text(
                         detailText,
                         color = White,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(vertical = 8.dp)
+                        fontSize = 13.sp
                     )
 
-                    Divider(color = Gray.copy(alpha = 0.3f))
+                    Spacer(Modifier.height(14.dp))
+                    HorizontalDivider(color = Gray.copy(alpha = 0.3f))
 
                     Text(
-                        "CHỌN MÁY CHỦ VÀ TẬP PHIM",
+                        "CHỌN MÁY CHỦ VÀ TẬP",
                         color = Red,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(vertical = 8.dp)
+                        modifier = Modifier.padding(vertical = 10.dp)
                     )
 
                     if (episodeServers.isEmpty()) {
@@ -770,33 +796,32 @@ fun VietStreamApp() {
                             color = Gray,
                             fontSize = 12.sp
                         )
-                    } else {
-                        episodeServers.forEachIndexed { serverIndex, server ->
-                            Text(
-                                server.name,
-                                color = White,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(vertical = 5.dp)
-                            )
+                    }
 
-                            server.episodes.forEach { episode ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 3.dp)
-                                        .background(
-                                            Color(0xFF292929),
-                                            RoundedCornerShape(7.dp)
-                                        )
-                                        .clickable {
-                                            val videoUrl = episode.m3u8
-                                            val embedUrl = episode.embed
+                    episodeServers.forEach { server ->
+                        Text(
+                            server.name,
+                            color = White,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        )
 
-                                            try {
-                                                if (videoUrl.startsWith("https://") ||
-                                                    videoUrl.startsWith("http://")
-                                                ) {
-                                                    val intent = Intent(
+                        server.episodes.forEach { episode ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 3.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF292929))
+                                    .clickable {
+                                        val videoUrl = episode.m3u8
+                                        val embedUrl = episode.embed
+
+                                        when {
+                                            videoUrl.startsWith("https://") ||
+                                                videoUrl.startsWith("http://") -> {
+                                                context.startActivity(
+                                                    Intent(
                                                         context,
                                                         InAppPlayerActivity::class.java
                                                     ).apply {
@@ -804,20 +829,16 @@ fun VietStreamApp() {
                                                             "video_title",
                                                             "${movie.name} - ${episode.name}"
                                                         )
-                                                        putExtra(
-                                                            "video_url",
-                                                            videoUrl
-                                                        )
+                                                        putExtra("video_url", videoUrl)
                                                     }
+                                                )
+                                                selected = null
+                                            }
 
-                                                    context.startActivity(intent)
-                                                    selected = null
-
-                                                } else if (
-                                                    embedUrl.startsWith("https://") ||
-                                                    embedUrl.startsWith("http://")
-                                                ) {
-                                                    val intent = Intent(
+                                            embedUrl.startsWith("https://") ||
+                                                embedUrl.startsWith("http://") -> {
+                                                context.startActivity(
+                                                    Intent(
                                                         context,
                                                         InAppWebActivity::class.java
                                                     ).apply {
@@ -825,53 +846,30 @@ fun VietStreamApp() {
                                                             "web_title",
                                                             "${movie.name} - ${episode.name}"
                                                         )
-                                                        putExtra(
-                                                            "web_url",
-                                                            embedUrl
-                                                        )
+                                                        putExtra("web_url", embedUrl)
                                                     }
-
-                                                    context.startActivity(intent)
-                                                    selected = null
-
-                                                } else {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Tập này chưa có đường dẫn phát.",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                }
-                                            } catch (e: Exception) {
-                                                Toast.makeText(
-                                                    context,
-                                                    "Không thể mở tập phim.",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
+                                                )
+                                                selected = null
                                             }
+
+                                            else -> Toast.makeText(
+                                                context,
+                                                "Tập này chưa có đường dẫn phát.",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
                                         }
-                                        .padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        "▶",
-                                        color = Red
-                                    )
-
-                                    Spacer(Modifier.width(9.dp))
-
-                                    Text(
-                                        episode.name.ifBlank { "Tập phim" },
-                                        color = White,
-                                        fontSize = 13.sp,
-                                        modifier = Modifier.weight(1f)
-                                    )
-
-                                    Text(
-                                        "Xem",
-                                        color = Red,
-                                        fontSize = 12.sp
-                                    )
-                                }
+                                    }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("▶", color = Red)
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    episode.name.ifBlank { "Tập phim" },
+                                    color = White,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text("Xem", color = Red, fontSize = 12.sp)
                             }
                         }
                     }
@@ -887,27 +885,41 @@ fun VietStreamApp() {
 }
 
 @Composable
-fun MovieCard(
-    movie: Movie,
-    onClick: () -> Unit
-) {
+fun MovieCard(movie: Movie, onClick: () -> Unit) {
     Column(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
             .clickable { onClick() }
     ) {
-        AsyncImage(
-            model = movie.poster.ifBlank { null },
-            contentDescription = movie.name,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(230.dp)
-                .background(Panel, RoundedCornerShape(9.dp)),
-            contentScale = ContentScale.Crop
-        )
+        Box {
+            AsyncImage(
+                model = movie.poster.ifBlank { null },
+                contentDescription = movie.name,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(0.68f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Panel),
+                contentScale = ContentScale.Crop
+            )
+            if (movie.year.isNotBlank()) {
+                Text(
+                    movie.year,
+                    color = White,
+                    fontSize = 10.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(7.dp)
+                        .background(
+                            Color.Black.copy(alpha = 0.75f),
+                            RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                )
+            }
+        }
 
-        Spacer(Modifier.height(6.dp))
-
+        Spacer(Modifier.height(7.dp))
         Text(
             movie.name,
             color = White,
@@ -915,11 +927,11 @@ fun MovieCard(
             fontWeight = FontWeight.SemiBold,
             maxLines = 2
         )
-
         Text(
-            movie.year,
+            movie.origin,
             color = Gray,
-            fontSize = 11.sp
+            fontSize = 10.sp,
+            maxLines = 1
         )
     }
 }
