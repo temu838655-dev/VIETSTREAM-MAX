@@ -1,253 +1,295 @@
+
 package com.vietstream.max
 
+import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
-import android.view.WindowManager
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.AudioAttributes
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Toast
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 
-private const val TEST_HLS_URL =
-    "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+@UnstableApi
+class InAppPlayerActivity : Activity() {
 
-class InAppPlayerActivity : ComponentActivity() {
+    private var player: ExoPlayer? = null
+    private lateinit var playerView: PlayerView
+    private lateinit var titleView: TextView
+
+    private var titles = arrayListOf<String>()
+    private var urls = arrayListOf<String>()
+    private var startIndex = 0
+
+    private val preferences by lazy {
+        getSharedPreferences("vietstream_playback", MODE_PRIVATE)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val singleTitle = intent.getStringExtra("video_title") ?: "VIETSTREAM MAX"
+        val singleUrl = intent.getStringExtra("video_url").orEmpty()
 
-        val title = intent.getStringExtra("video_title")
-            ?: "VIETSTREAM MAX"
+        titles = intent.getStringArrayListExtra("episode_titles") ?: arrayListOf()
+        urls = intent.getStringArrayListExtra("episode_urls") ?: arrayListOf()
+        startIndex = intent.getIntExtra("episode_index", 0)
 
-        val videoUrl = intent.getStringExtra("video_url")
-            ?.takeIf { it.isNotBlank() }
-            ?: TEST_HLS_URL
+        if (urls.isEmpty() && singleUrl.isNotBlank()) {
+            urls.add(singleUrl)
+            titles.add(singleTitle)
+        }
 
-        setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Color(0xFFE50914),
-                    background = Color.Black,
-                    surface = Color(0xFF191919)
-                )
-            ) {
-                InAppVideoPlayerScreen(
-                    title = title,
-                    streamUrl = videoUrl,
-                    onBack = { finish() }
-                )
-            }
+        if (urls.isEmpty()) {
+            Toast.makeText(this, "Không có đường dẫn video để phát", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+
+        if (titles.size != urls.size) {
+            titles = ArrayList(urls.indices.map { "Tập ${it + 1}" })
+        }
+
+        startIndex = startIndex.coerceIn(0, urls.lastIndex)
+
+        buildInterface()
+        initializePlayer()
+    }
+
+    private fun buildInterface() {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(android.graphics.Color.BLACK)
+        }
+
+        titleView = TextView(this).apply {
+            text = titles.getOrElse(startIndex) { "VIETSTREAM MAX" }
+            textSize = 16f
+            setTextColor(android.graphics.Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(16, 12, 16, 12)
+        }
+
+        playerView = PlayerView(this).apply {
+            useController = true
+            controllerAutoShow = true
+            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+            setBackgroundColor(android.graphics.Color.BLACK)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        }
+
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(6, 8, 6, 8)
+        }
+
+        controls.addView(makeButton("Tập trước") { previousEpisode() })
+        controls.addView(makeButton("Tốc độ") { showSpeedOptions() })
+        controls.addView(makeButton("Phụ đề") { showSubtitleOptions() })
+        controls.addView(makeButton("Tập tiếp") { nextEpisode() })
+
+        root.addView(titleView)
+        root.addView(playerView)
+        root.addView(controls)
+
+        setContentView(root)
+    }
+
+    private fun makeButton(label: String, action: () -> Unit): Button {
+        return Button(this).apply {
+            text = label
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setOnClickListener { action() }
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            )
         }
     }
 
-    override fun onDestroy() {
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        super.onDestroy()
-    }
-}
+    private fun initializePlayer() {
+        val exoPlayer = ExoPlayer.Builder(this).build()
+        player = exoPlayer
+        playerView.player = exoPlayer
 
-@Composable
-fun InAppVideoPlayerScreen(
-    title: String,
-    streamUrl: String,
-    onBack: () -> Unit
-) {
-    val context = LocalContext.current
+        val mediaItems = urls.mapIndexed { index, url ->
+            MediaItem.Builder()
+                .setUri(url)
+                .setMediaId(index.toString())
+                .build()
+        }
 
-    var playbackError by remember {
-        mutableStateOf<String?>(null)
-    }
+        exoPlayer.setMediaItems(mediaItems, startIndex, 0L)
 
-    var isBuffering by remember {
-        mutableStateOf(true)
-    }
+        exoPlayer.addListener(object : Player.Listener {
 
-    val player = remember(context) {
-        ExoPlayer.Builder(context)
-            .build()
-            .apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(C.USAGE_MEDIA)
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                        .build(),
-                    true
-                )
-            }
-    }
-
-    BackHandler {
-        onBack()
-    }
-
-    DisposableEffect(player) {
-        val listener = object : Player.Listener {
-
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                isBuffering = playbackState == Player.STATE_BUFFERING
+            override fun onMediaItemTransition(
+                mediaItem: MediaItem?,
+                reason: Int
+            ) {
+                val index = exoPlayer.currentMediaItemIndex
+                titleView.text = titles.getOrElse(index) { "Tập ${index + 1}" }
+                saveProgress()
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                playbackError = error.message
-                    ?: "Không thể phát video này."
-                isBuffering = false
-            }
-        }
-
-        player.addListener(listener)
-
-        onDispose {
-            player.removeListener(listener)
-            player.release()
-        }
-    }
-
-    LaunchedEffect(streamUrl, player) {
-        playbackError = null
-        isBuffering = true
-
-        try {
-            player.setMediaItem(MediaItem.fromUri(streamUrl))
-            player.prepare()
-            player.playWhenReady = true
-        } catch (error: Exception) {
-            playbackError = error.message
-                ?: "Không thể tải video."
-            isBuffering = false
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF101010))
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Start
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.Filled.ArrowBack,
-                    contentDescription = "Quay lại",
-                    tint = Color.White
-                )
+                Toast.makeText(
+                    this@InAppPlayerActivity,
+                    "Không phát được video: ${error.errorCodeName}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
 
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = 16.sp,
-                maxLines = 1
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            contentAlignment = Alignment.Center
-        ) {
-            AndroidView(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f),
-                factory = { viewContext ->
-                    PlayerView(viewContext).apply {
-                        this.player = player
-                        useController = true
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        setShowBuffering(
-                            PlayerView.SHOW_BUFFERING_WHEN_PLAYING
-                        )
-                        setKeepContentOnPlayerReset(true)
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) {
+                    if (exoPlayer.hasNextMediaItem()) {
+                        exoPlayer.seekToNextMediaItem()
+                        exoPlayer.play()
                     }
-                },
-                update = { view ->
-                    view.player = player
                 }
-            )
-
-            if (isBuffering && playbackError == null) {
-                CircularProgressIndicator(
-                    color = Color(0xFFE50914)
-                )
             }
+        })
 
-            playbackError?.let { message ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Không thể phát video",
-                        color = Color(0xFFE50914),
-                        fontSize = 18.sp
-                    )
+        exoPlayer.prepare()
+        exoPlayer.playWhenReady = true
+    }
 
-                    Text(
-                        text = message,
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
+    private fun showSpeedOptions() {
+        val speeds = arrayOf(
+            "0.5x", "0.75x", "1.0x", "1.25x",
+            "1.5x", "1.75x", "2.0x"
+        )
+        val values = floatArrayOf(
+            0.5f, 0.75f, 1f, 1.25f,
+            1.5f, 1.75f, 2f
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Tốc độ phát")
+            .setItems(speeds) { _, which ->
+                player?.setPlaybackSpeed(values[which])
+            }
+            .show()
+    }
+
+    private fun showSubtitleOptions() {
+        val exoPlayer = player ?: return
+        val tracks = exoPlayer.currentTracks
+        val subtitleTracks = tracks.groups.filter {
+            it.type == C.TRACK_TYPE_TEXT
+        }
+
+        val options = mutableListOf("Tắt phụ đề")
+        val selections = mutableListOf<Pair<Int, Int>>()
+
+        subtitleTracks.forEachIndexed { groupIndex, group ->
+            for (trackIndex in 0 until group.length) {
+                val format = group.getTrackFormat(trackIndex)
+                val language = format.language ?: "Không rõ ngôn ngữ"
+                options.add("$language - Phụ đề ${trackIndex + 1}")
+                selections.add(groupIndex to trackIndex)
             }
         }
 
-        Text(
-            text = "VIETSTREAM MAX • Trình phát Media3",
-            color = Color.Gray,
-            fontSize = 11.sp,
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(10.dp)
-        )
+        AlertDialog.Builder(this)
+            .setTitle("Chọn phụ đề")
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    exoPlayer.trackSelectionParameters =
+                        exoPlayer.trackSelectionParameters
+                            .buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                            .build()
+                } else {
+                    val (groupIndex, trackIndex) = selections[which - 1]
+                    val group = subtitleTracks[groupIndex]
+                    val override = TrackSelectionOverride(
+                        group.mediaTrackGroup,
+                        listOf(trackIndex)
+                    )
+
+                    exoPlayer.trackSelectionParameters =
+                        exoPlayer.trackSelectionParameters
+                            .buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                            .setOverrideForType(override)
+                            .build()
+                }
+            }
+            .show()
+    }
+
+    private fun previousEpisode() {
+        val exoPlayer = player ?: return
+        if (exoPlayer.hasPreviousMediaItem()) {
+            exoPlayer.seekToPreviousMediaItem()
+            exoPlayer.play()
+        } else {
+            Toast.makeText(this, "Đây là tập đầu tiên", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun nextEpisode() {
+        val exoPlayer = player ?: return
+        if (exoPlayer.hasNextMediaItem()) {
+            exoPlayer.seekToNextMediaItem()
+            exoPlayer.play()
+        } else {
+            Toast.makeText(this, "Đây là tập cuối cùng", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun saveProgress() {
+        val exoPlayer = player ?: return
+        val index = exoPlayer.currentMediaItemIndex
+        if (index < 0) return
+
+        preferences.edit()
+            .putString("last_title", titles.getOrElse(index) { "VIETSTREAM MAX" })
+            .putString("last_url", urls.getOrNull(index))
+            .putInt("last_index", index)
+            .putLong("last_position", exoPlayer.currentPosition)
+            .apply()
+    }
+
+    override fun onPause() {
+        saveProgress()
+        player?.pause()
+        super.onPause()
+    }
+
+    override fun onStop() {
+        saveProgress()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        playerView.player = null
+        player?.release()
+        player = null
+        super.onDestroy()
+    }
+
+    @Deprecated("Deprecated in Android API")
+    override fun onBackPressed() {
+        saveProgress()
+        super.onBackPressed()
     }
 }
