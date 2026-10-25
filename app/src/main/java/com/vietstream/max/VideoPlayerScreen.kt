@@ -1,4 +1,3 @@
-
 package com.vietstream.max
 
 import android.app.Activity
