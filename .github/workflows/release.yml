@@ -19,6 +19,7 @@ jobs:
   build:
     name: Build VIETSTREAM MAX
     runs-on: ubuntu-latest
+    timeout-minutes: 40
 
     steps:
       - name: Checkout source
@@ -39,10 +40,14 @@ jobs:
         run: |
           java -version
           gradle --version
-          echo "ANDROID_HOME=${ANDROID_HOME:-not set}"
-          if [ -n "$ANDROID_HOME" ]; then
-            ls "$ANDROID_HOME"
+
+          if [ -z "$ANDROID_HOME" ]; then
+            echo "ANDROID_HOME is not configured."
+            exit 1
           fi
+
+          echo "Android SDK: $ANDROID_HOME"
+          ls "$ANDROID_HOME"
 
       - name: Build Debug APK
         run: gradle --no-daemon :app:assembleDebug --stacktrace
