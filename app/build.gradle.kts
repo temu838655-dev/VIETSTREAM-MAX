@@ -1,3 +1,4 @@
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -46,9 +47,10 @@ android {
 }
 
 dependencies {
+    // Compose
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
-
     implementation(composeBom)
+
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -56,26 +58,31 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
+    // Android core và lifecycle
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
 
-    // Video player
+    // Video player: HLS, DASH và phát video
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
     implementation("androidx.media3:media3-exoplayer-dash:1.5.1")
 
-    // Movie posters and backdrops
+    // Ảnh poster và ảnh nền
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // Movie database API
+    // Kết nối API phim
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    implementation("com.google.code.gson:gson:2.11.0")
 
-    // Asynchronous loading
+    // Coroutine
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // Custom Tabs nếu mã nguồn có sử dụng
     implementation("androidx.browser:browser:1.8.0")
 
+    // Công cụ debug Compose
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
