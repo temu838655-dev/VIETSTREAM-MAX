@@ -34,7 +34,15 @@ class InAppWebActivity : ComponentActivity() {
 
     private var webView: WebView? = null
     private var fullscreenView: View? = null
-    private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
+    private var fullscreenCallback:
+        WebChromeClient.CustomViewCallback? = null
+
+    private var originalSystemUiVisibility = 0
+
+    private val isTv: Boolean
+        get() = packageManager.hasSystemFeature(
+            android.content.pm.PackageManager.FEATURE_LEANBACK
+        ) || resources.configuration.smallestScreenWidthDp >= 600
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +50,9 @@ class InAppWebActivity : ComponentActivity() {
         window.addFlags(
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
         )
+
+        originalSystemUiVisibility =
+            window.decorView.systemUiVisibility
 
         val title = intent.getStringExtra("web_title")
             ?: "VIETSTREAM MAX"
@@ -51,17 +62,29 @@ class InAppWebActivity : ComponentActivity() {
         setContent {
             var loading by remember { mutableStateOf(true) }
             var progress by remember { mutableIntStateOf(0) }
-            var errorMessage by remember { mutableStateOf<String?>(null) }
-            var pageView by remember { mutableStateOf<WebView?>(null) }
+            var errorMessage by remember {
+                mutableStateOf<String?>(null)
+            }
 
-            BackHandler(
-                enabled = fullscreenView != null ||
-                    (pageView?.canGoBack() == true)
-            ) {
-                if (fullscreenView != null) {
-                    hideFullscreen()
-                } else {
-                    pageView?.goBack()
+            var pageCanGoBack by remember {
+                mutableStateOf(false)
+            }
+
+            var pageView by remember {
+                mutableStateOf<WebView?>(null)
+            }
+
+            // Luôn nhận phím Back:
+            // Fullscreen -> trang trước -> đóng Activity.
+            BackHandler(enabled = true) {
+                when {
+                    fullscreenView != null -> hideFullscreen()
+
+                    pageView?.canGoBack() == true -> {
+                        pageView?.goBack()
+                    }
+
+                    else -> finish()
                 }
             }
 
@@ -77,55 +100,65 @@ class InAppWebActivity : ComponentActivity() {
                     .background(Color.Black)
             ) {
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF151515))
-                        .padding(horizontal = 8.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-
-                    IconButton(
-                        onClick = {
-                            if (fullscreenView != null) {
-                                hideFullscreen()
-                            } else if (pageView?.canGoBack() == true) {
-                                pageView?.goBack()
-                            } else {
-                                finish()
-                            }
-                        }
+                if (fullscreenView == null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF151515))
+                            .padding(
+                                horizontal = if (isTv) 16.dp else 8.dp,
+                                vertical = if (isTv) 10.dp else 5.dp
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Filled.ArrowBack,
-                            contentDescription = "Quay lại",
-                            tint = Color.White
-                        )
-                    }
 
-                    Text(
-                        text = title,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                        IconButton(
+                            onClick = {
+                                when {
+                                    pageView?.canGoBack() == true ->
+                                        pageView?.goBack()
 
-                    IconButton(
-                        onClick = {
-                            errorMessage = null
-                            pageView?.reload()
+                                    else -> finish()
+                                }
+                            },
+                            modifier = Modifier.size(
+                                if (isTv) 64.dp else 48.dp
+                            )
+                        ) {
+                            Icon(
+                                Icons.Filled.ArrowBack,
+                                contentDescription = "Quay lại",
+                                tint = Color.White
+                            )
                         }
-                    ) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "Tải lại",
-                            tint = Color.White
+
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
+
+                        IconButton(
+                            onClick = {
+                                errorMessage = null
+                                pageView?.reload()
+                            },
+                            modifier = Modifier.size(
+                                if (isTv) 64.dp else 48.dp
+                            )
+                        ) {
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = "Tải lại",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
 
-                if (loading) {
+                if (loading && fullscreenView == null) {
                     LinearProgressIndicator(
                         progress = { progress / 100f },
                         modifier = Modifier.fillMaxWidth(),
@@ -149,7 +182,9 @@ class InAppWebActivity : ComponentActivity() {
                                 webView = this
                                 pageView = this
 
-                                setBackgroundColor(android.graphics.Color.BLACK)
+                                setBackgroundColor(
+                                    android.graphics.Color.BLACK
+                                )
 
                                 isFocusable = true
                                 isFocusableInTouchMode = true
@@ -166,7 +201,9 @@ class InAppWebActivity : ComponentActivity() {
 
                                     cacheMode = WebSettings.LOAD_DEFAULT
 
-                                    javaScriptCanOpenWindowsAutomatically = false
+                                    javaScriptCanOpenWindowsAutomatically =
+                                        false
+
                                     setSupportMultipleWindows(false)
 
                                     allowFileAccess = false
@@ -176,14 +213,14 @@ class InAppWebActivity : ComponentActivity() {
                                         WebSettings.MIXED_CONTENT_NEVER_ALLOW
                                 }
 
-                                val cookieManager =
-                                    CookieManager.getInstance()
+                                CookieManager.getInstance().apply {
+                                    setAcceptCookie(true)
 
-                                cookieManager.setAcceptCookie(true)
-                                cookieManager.setAcceptThirdPartyCookies(
-                                    this,
-                                    true
-                                )
+                                    setAcceptThirdPartyCookies(
+                                        this@apply,
+                                        true
+                                    )
+                                }
 
                                 webViewClient = object : WebViewClient() {
 
@@ -203,6 +240,8 @@ class InAppWebActivity : ComponentActivity() {
                                     ) {
                                         loading = false
                                         progress = 100
+                                        pageCanGoBack =
+                                            view?.canGoBack() == true
                                     }
 
                                     override fun onReceivedError(
@@ -213,74 +252,88 @@ class InAppWebActivity : ComponentActivity() {
                                         if (request?.isForMainFrame == true) {
                                             loading = false
                                             errorMessage =
-                                                "Không thể tải trang. Hãy kiểm tra Internet."
+                                                "Không thể tải trang. Hãy kiểm tra kết nối Internet."
                                         }
                                     }
                                 }
 
-                                webChromeClient = object : WebChromeClient() {
+                                webChromeClient =
+                                    object : WebChromeClient() {
 
-                                    override fun onProgressChanged(
-                                        view: WebView?,
-                                        newProgress: Int
-                                    ) {
-                                        progress = newProgress
-                                        loading = newProgress < 100
-                                    }
-
-                                    override fun onShowCustomView(
-                                        view: View?,
-                                        callback: CustomViewCallback?
-                                    ) {
-                                        if (view == null) return
-
-                                        if (fullscreenView != null) {
-                                            callback?.onCustomViewHidden()
-                                            return
+                                        override fun onProgressChanged(
+                                            view: WebView?,
+                                            newProgress: Int
+                                        ) {
+                                            progress = newProgress
+                                            loading = newProgress < 100
                                         }
 
-                                        fullscreenView = view
-                                        fullscreenCallback = callback
+                                        override fun onShowCustomView(
+                                            view: View?,
+                                            callback: CustomViewCallback?
+                                        ) {
+                                            if (view == null) return
 
-                                        val decor =
-                                            window.decorView as FrameLayout
+                                            if (fullscreenView != null) {
+                                                callback?.onCustomViewHidden()
+                                                return
+                                            }
 
-                                        decor.addView(
-                                            view,
-                                            FrameLayout.LayoutParams(
-                                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                                Gravity.CENTER
+                                            fullscreenView = view
+                                            fullscreenCallback = callback
+
+                                            val decor =
+                                                window.decorView as FrameLayout
+
+                                            decor.addView(
+                                                view,
+                                                FrameLayout.LayoutParams(
+                                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                                    Gravity.CENTER
+                                                )
                                             )
-                                        )
 
-                                        enableFullscreen()
+                                            enableFullscreen()
+                                        }
+
+                                        override fun onHideCustomView() {
+                                            hideFullscreen()
+                                        }
                                     }
 
-                                    override fun onHideCustomView() {
-                                        hideFullscreen()
-                                    }
-                                }
+                                val parsedUri =
+                                    android.net.Uri.parse(initialUrl)
 
-                                if (
-                                    initialUrl.startsWith("https://") ||
-                                    initialUrl.startsWith("http://")
-                                ) {
+                                val validUrl =
+                                    (parsedUri.scheme == "https" ||
+                                        parsedUri.scheme == "http") &&
+                                        !parsedUri.host.isNullOrBlank()
+
+                                if (validUrl) {
                                     loadUrl(initialUrl)
                                 } else {
                                     loading = false
-                                    errorMessage = "Địa chỉ trang web không hợp lệ."
+                                    errorMessage =
+                                        "Địa chỉ trang web không hợp lệ."
                                 }
                             }
+                        },
+
+                        update = { view ->
+                            pageView = view
                         }
                     )
 
-                    if (errorMessage != null) {
+                    if (errorMessage != null &&
+                        fullscreenView == null
+                    ) {
                         Column(
                             modifier = Modifier
                                 .align(Alignment.Center)
                                 .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            horizontalAlignment =
+                                Alignment.CenterHorizontally
                         ) {
 
                             Text(
@@ -325,33 +378,39 @@ class InAppWebActivity : ComponentActivity() {
     private fun hideFullscreen() {
         val view = fullscreenView ?: return
 
-        (view.parent as? ViewGroup)?.removeView(view)
-
+        // Xóa trạng thái trước để tránh gọi lặp.
         fullscreenView = null
 
-        fullscreenCallback?.onCustomViewHidden()
+        (view.parent as? ViewGroup)?.removeView(view)
+
+        val callback = fullscreenCallback
         fullscreenCallback = null
+
+        callback?.onCustomViewHidden()
 
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility =
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            originalSystemUiVisibility
     }
 
     private fun releaseWebView() {
         hideFullscreen()
 
-        webView?.let { view ->
-            view.stopLoading()
-            view.webChromeClient = null
-            view.webViewClient = WebViewClient()
+        val view = webView ?: return
 
-            (view.parent as? ViewGroup)?.removeView(view)
-
-            view.removeAllViews()
-            view.destroy()
-        }
-
+        // Đặt null trước để tránh giải phóng hai lần.
         webView = null
+
+        view.stopLoading()
+        view.onPause()
+
+        view.webChromeClient = null
+        view.webViewClient = WebViewClient()
+
+        (view.parent as? ViewGroup)?.removeView(view)
+
+        view.removeAllViews()
+        view.destroy()
     }
 
     override fun onPause() {
@@ -378,7 +437,10 @@ class InAppWebActivity : ComponentActivity() {
     override fun onBackPressed() {
         when {
             fullscreenView != null -> hideFullscreen()
-            webView?.canGoBack() == true -> webView?.goBack()
+
+            webView?.canGoBack() == true ->
+                webView?.goBack()
+
             else -> super.onBackPressed()
         }
     }
