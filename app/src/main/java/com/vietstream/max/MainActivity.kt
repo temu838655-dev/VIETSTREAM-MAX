@@ -2,6 +2,7 @@ package com.vietstream.max
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
@@ -13,13 +14,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +35,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,6 +60,25 @@ private val White = Color(0xFFF5F5F5)
 private val Gray = Color(0xFFAAAAAA)
 private val FocusColor = Color(0xFFFF4545)
 
+/** Try VLC for a direct media URL. Returns false if VLC cannot be launched. */
+private fun openInVlc(context: Context, url: String, title: String): Boolean {
+    return try {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setPackage("org.videolan.vlc")
+            setDataAndType(Uri.parse(url), "video/*")
+            putExtra("title", title)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        true
+    } catch (_: android.content.ActivityNotFoundException) {
+        false
+    } catch (_: Exception) {
+        false
+    }
+}
+private val gson = Gson()
+
 data class Movie(
     val name: String,
     val slug: String,
@@ -60,7 +87,23 @@ data class Movie(
     val origin: String,
     val description: String = "",
     val countries: List<String> = emptyList(),
-    val genres: List<String> = emptyList()
+    val genres: List<String> = emptyList(),
+    // Dữ liệu tiếp tục xem; mặc định giúp đọc được dữ liệu thư viện cũ.
+    val lastEpisodeName: String = "",
+    val lastEpisodeUrl: String = "",
+    val lastEpisodeIsM3u8: Boolean = false,
+    val lastEpisodeTitles: List<String> = emptyList(),
+    val lastEpisodeUrls: List<String> = emptyList(),
+    val lastEpisodeIndex: Int = 0
+)
+
+data class UserProfile(
+    val id: String,
+    val name: String,
+    val avatar: String,
+    val isKids: Boolean = false,
+    val pin: String = "",
+    val pinEnabled: Boolean = false
 )
 
 data class EpisodeSource(
@@ -70,10 +113,7 @@ data class EpisodeSource(
     val embed: String
 )
 
-data class EpisodeServer(
-    val name: String,
-    val episodes: List<EpisodeSource>
-)
+data class EpisodeServer(val name: String, val episodes: List<EpisodeSource>)
 
 interface MovieApi {
     @GET("v1/api/home")
@@ -105,48 +145,32 @@ object MovieService {
     }
 }
 
-private val gson = Gson()
-
-private fun jsonText(obj: JsonObject, key: String): String {
-    return try {
+private fun jsonText(obj: JsonObject, key: String): String =
+    try {
         obj.get(key)?.takeIf { !it.isJsonNull }?.asString ?: ""
     } catch (_: Exception) {
         ""
     }
-}
 
 private fun jsonNames(obj: JsonObject, key: String): List<String> {
     return try {
-        val array = obj.get(key)
-            ?.takeIf { it.isJsonArray }
-            ?.asJsonArray ?: return emptyList()
-
+        val array = obj.get(key)?.takeIf { it.isJsonArray }?.asJsonArray
+            ?: return emptyList()
         array.mapNotNull { element ->
             try {
                 val value = if (element.isJsonObject) {
-                    val item = element.asJsonObject
-                    jsonText(item, "name")
-                        .ifBlank { jsonText(item, "slug") }
-                } else if (!element.isJsonNull) {
-                    element.asString
-                } else {
-                    ""
-                }
-
+                    jsonText(element.asJsonObject, "name")
+                        .ifBlank { jsonText(element.asJsonObject, "slug") }
+                } else if (!element.isJsonNull) element.asString else ""
                 value.trim().takeIf { it.isNotBlank() }
-            } catch (_: Exception) {
-                null
-            }
+            } catch (_: Exception) { null }
         }.distinct()
-    } catch (_: Exception) {
-        emptyList()
-    }
+    } catch (_: Exception) { emptyList() }
 }
 
 private fun resolvePoster(raw: String, imageRoot: String): String {
     val value = raw.trim()
     if (value.isBlank()) return ""
-
     return when {
         value.startsWith("https://", true) -> value
         value.startsWith("http://", true) ->
@@ -154,24 +178,16 @@ private fun resolvePoster(raw: String, imageRoot: String): String {
         value.startsWith("//") -> "https:$value"
         else -> {
             val root = imageRoot.trim().trimEnd('/')
-            if (root.isBlank()) return ""
-            if (value.startsWith("/")) "$root$value" else "$root/$value"
+            if (root.isBlank()) "" else if (value.startsWith("/")) "$root$value" else "$root/$value"
         }
     }
 }
 
 fun parseMovies(root: JsonObject): List<Movie> {
-    val data = try {
-        root.getAsJsonObject("data")
-    } catch (_: Exception) {
-        null
-    }
-
+    val data = try { root.getAsJsonObject("data") } catch (_: Exception) { null }
     val items = when {
-        root.get("items")?.isJsonArray == true ->
-            root.getAsJsonArray("items")
-        data?.get("items")?.isJsonArray == true ->
-            data.getAsJsonArray("items")
+        root.get("items")?.isJsonArray == true -> root.getAsJsonArray("items")
+        data?.get("items")?.isJsonArray == true -> data.getAsJsonArray("items")
         else -> null
     } ?: return emptyList()
 
@@ -179,263 +195,354 @@ fun parseMovies(root: JsonObject): List<Movie> {
         .ifBlank { jsonText(root, "APP_DOMAIN_CDN_IMAGE") }
         .ifBlank { jsonText(data ?: JsonObject(), "pathImage") }
         .ifBlank { jsonText(root, "pathImage") }
-        .ifBlank { "https://phimimg.com" }
-        .trimEnd('/')
+        .ifBlank { "https://phimimg.com" }.trimEnd('/')
 
     return items.mapNotNull { element ->
         try {
             val item = element.asJsonObject
             val name = jsonText(item, "name")
             val slug = jsonText(item, "slug")
-            val poster = jsonText(item, "poster_url")
-                .ifBlank { jsonText(item, "thumb_url") }
-
-            if (name.isBlank() || slug.isBlank()) {
-                null
-            } else {
-                Movie(
-                    name = name,
-                    slug = slug,
-                    poster = resolvePoster(poster, imageRoot),
-                    year = jsonText(item, "year"),
-                    origin = jsonText(item, "origin_name"),
-                    description = jsonText(item, "content"),
-                    countries = jsonNames(item, "country"),
-                    genres = jsonNames(item, "category")
-                )
-            }
-        } catch (_: Exception) {
-            null
-        }
+            val poster = jsonText(item, "poster_url").ifBlank { jsonText(item, "thumb_url") }
+            if (name.isBlank() || slug.isBlank()) null else Movie(
+                name = name,
+                slug = slug,
+                poster = resolvePoster(poster, imageRoot),
+                year = jsonText(item, "year"),
+                origin = jsonText(item, "origin_name"),
+                description = jsonText(item, "content"),
+                countries = jsonNames(item, "country"),
+                genres = jsonNames(item, "category")
+            )
+        } catch (_: Exception) { null }
     }
 }
 
 fun parseEpisodeServers(root: JsonObject): List<EpisodeServer> {
-    val episodes = try {
-        root.getAsJsonArray("episodes")
-    } catch (_: Exception) {
-        null
-    } ?: return emptyList()
-
+    val episodes = try { root.getAsJsonArray("episodes") } catch (_: Exception) { null }
+        ?: return emptyList()
     return episodes.mapNotNull { element ->
         try {
             val server = element.asJsonObject
-            val serverName = jsonText(server, "server_name")
-                .ifBlank { "Máy chủ" }
-            val serverData = server.getAsJsonArray("server_data")
-
-            val parsed = serverData.mapNotNull { episodeElement ->
+            val name = jsonText(server, "server_name").ifBlank { "Máy chủ" }
+            val parsed = server.getAsJsonArray("server_data").mapNotNull { episodeElement ->
                 try {
-                    val episode = episodeElement.asJsonObject
+                    val e = episodeElement.asJsonObject
                     EpisodeSource(
-                        name = jsonText(episode, "name"),
-                        slug = jsonText(episode, "slug"),
-                        m3u8 = jsonText(episode, "link_m3u8"),
-                        embed = jsonText(episode, "link_embed")
+                        jsonText(e, "name"), jsonText(e, "slug"),
+                        jsonText(e, "link_m3u8"), jsonText(e, "link_embed")
                     )
-                } catch (_: Exception) {
-                    null
+                } catch (_: Exception) { null }
+            }
+            if (parsed.isEmpty()) null else EpisodeServer(name, parsed)
+        } catch (_: Exception) { null }
+    }
+}
+
+// HỒ SƠ VÀ DỮ LIỆU RIÊNG TỪNG HỒ SƠ
+
+private const val PREFS = "vietstream_profiles"
+private const val PROFILES_KEY = "profiles_json"
+private const val ACTIVE_PROFILE_KEY = "active_profile_id"
+
+private fun defaultProfiles(): List<UserProfile> = listOf(
+    UserProfile("profile_1", "Hoàng", "😎"),
+    UserProfile("profile_2", "Gia đình", "❤️"),
+    UserProfile("profile_3", "Trẻ em", "🧸", isKids = true),
+    UserProfile("profile_4", "Khách", "🎬")
+)
+
+private fun readProfiles(context: Context): List<UserProfile> {
+    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val json = prefs.getString(PROFILES_KEY, null)
+    val loaded = try {
+        if (json.isNullOrBlank()) emptyList()
+        else gson.fromJson<List<UserProfile>>(
+            json, object : TypeToken<List<UserProfile>>() {}.type
+        ) ?: emptyList()
+    } catch (_: Exception) { emptyList() }
+
+    val profiles = if (loaded.isNotEmpty()) loaded else defaultProfiles()
+    if (loaded.isEmpty()) {
+        prefs.edit().putString(PROFILES_KEY, gson.toJson(profiles)).apply()
+    }
+
+    // Chuyển yêu thích/lịch sử cũ sang hồ sơ đầu tiên để không mất dữ liệu cũ.
+    val firstId = profiles.firstOrNull()?.id
+    if (firstId != null) {
+        val legacy = context.getSharedPreferences("vietstream_library", Context.MODE_PRIVATE)
+        listOf("favorites" to "favorites_movies", "history" to "history_movies").forEach { (kind, oldKey) ->
+            val newKey = profilePrefsKey(firstId, kind)
+            if (prefs.getString(newKey, null) == null) {
+                val oldJson = legacy.getString(oldKey, null)
+                if (!oldJson.isNullOrBlank()) {
+                    prefs.edit().putString(newKey, oldJson).apply()
                 }
             }
-
-            if (parsed.isEmpty()) null
-            else EpisodeServer(serverName, parsed)
-        } catch (_: Exception) {
-            null
         }
     }
+    return profiles
 }
 
-// THƯ VIỆN CỤC BỘ
+private fun saveProfiles(context: Context, profiles: List<UserProfile>) {
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        .putString(PROFILES_KEY, gson.toJson(profiles)).apply()
+}
 
-private const val PREFS_NAME = "vietstream_library"
-private const val FAVORITES_KEY = "favorites_movies"
-private const val HISTORY_KEY = "history_movies"
+private fun profilePrefsKey(profileId: String, kind: String) = "${profileId}_$kind"
 
-private fun readMovieList(context: Context, key: String): List<Movie> {
+private fun readMovieList(context: Context, profileId: String, kind: String): List<Movie> {
     return try {
-        val json = context.getSharedPreferences(
-            PREFS_NAME,
-            Context.MODE_PRIVATE
-        ).getString(key, null) ?: return emptyList()
-
-        val type = object : TypeToken<List<Movie>>() {}.type
-        gson.fromJson<List<Movie>>(json, type) ?: emptyList()
-    } catch (_: Exception) {
-        emptyList()
-    }
+        val json = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(profilePrefsKey(profileId, kind), null) ?: return emptyList()
+        gson.fromJson<List<Movie>>(
+            json, object : TypeToken<List<Movie>>() {}.type
+        ) ?: emptyList()
+    } catch (_: Exception) { emptyList() }
 }
 
-private fun saveMovieList(
-    context: Context,
-    key: String,
-    movies: List<Movie>
-) {
-    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        .edit()
-        .putString(key, gson.toJson(movies))
-        .apply()
+private fun saveMovieList(context: Context, profileId: String, kind: String, movies: List<Movie>) {
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        .putString(profilePrefsKey(profileId, kind), gson.toJson(movies)).apply()
 }
 
 // POSTER
 
 @Composable
-fun MoviePoster(
-    url: String,
-    name: String,
-    modifier: Modifier = Modifier
-) {
+fun MoviePoster(url: String, name: String, modifier: Modifier = Modifier) {
     var imageFailed by remember(url) { mutableStateOf(false) }
-
-    Box(
-        modifier.background(Panel),
-        contentAlignment = Alignment.Center
-    ) {
+    Box(modifier.background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
         if (url.isNotBlank() && !imageFailed) {
-            AsyncImage(
-                model = url,
-                contentDescription = name,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                onError = { imageFailed = true }
-            )
+            AsyncImage(model = url, contentDescription = name, modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop, onError = { imageFailed = true })
         } else {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text("▶", color = Red, fontSize = 30.sp)
-                Text(
-                    name,
-                    color = Gray,
-                    fontSize = 11.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text("▶", color = MaterialTheme.colorScheme.primary, fontSize = 30.sp)
+                Text(name, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
 }
 
-// BỘ LỌC PHIM
+// MÀN HÌNH HỒ SƠ
 
 @Composable
-private fun MovieFilterRow(
-    title: String,
-    options: List<String>,
-    selected: String,
-    onSelect: (String) -> Unit
+private fun ProfilePickerScreen(
+    profiles: List<UserProfile>,
+    onSelect: (UserProfile) -> Unit,
+    onManage: () -> Unit
 ) {
-    if (options.isEmpty()) return
-
     Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp)
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            title,
-            color = Gray,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 12.dp, bottom = 4.dp)
-        )
-
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            options.forEach { option ->
-                FilterChip(
-                    selected = selected == option,
-                    onClick = { onSelect(option) },
-                    label = {
-                        Text(
-                            option,
-                            fontSize = 11.sp,
-                            maxLines = 1
-                        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("N", color = MaterialTheme.colorScheme.primary, fontSize = 42.sp, fontWeight = FontWeight.Black)
+            Spacer(Modifier.width(8.dp))
+            Text("VIETSTREAM", color = MaterialTheme.colorScheme.onSurface, fontSize = 25.sp, fontWeight = FontWeight.Black)
+        }
+        Text("Ai đang xem?", color = MaterialTheme.colorScheme.onSurface, fontSize = 25.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp, bottom = 24.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            profiles.chunked(2).forEach { rowProfiles ->
+                Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.Top) {
+                    rowProfiles.forEach { profile ->
+                        var profileFocused by remember(profile.id) { mutableStateOf(false) }
+                        Column(
+                            Modifier.width(125.dp).clip(RoundedCornerShape(12.dp))
+                                .onFocusChanged { profileFocused = it.isFocused }
+                                .clickable { onSelect(profile) }.focusable().padding(6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                Modifier.size(94.dp).clip(RoundedCornerShape(14.dp))
+                                    .background(profileColor(profile.id))
+                                    .border(if (profileFocused) 3.dp else 2.dp, if (profileFocused) MaterialTheme.colorScheme.primary else Color(0xFF444444), RoundedCornerShape(14.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(profile.avatar, fontSize = 42.sp)
+                                if (profile.pinEnabled) {
+                                    Text("🔒", fontSize = 15.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp))
+                                }
+                            }
+                            Text(profile.name, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, modifier = Modifier.padding(top = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (profile.isKids) Text("TRẺ EM", color = Color(0xFF79C8FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
-                )
+                }
             }
         }
+        Spacer(Modifier.height(28.dp))
+        OutlinedButton(onClick = onManage) { Text("Quản lý hồ sơ", color = MaterialTheme.colorScheme.onSurface) }
     }
 }
 
+private fun profileColor(id: String): Color = when (id) {
+    "profile_1" -> Color(0xFF5A2028)
+    "profile_2" -> Color(0xFF234B62)
+    "profile_3" -> Color(0xFF385B32)
+    else -> Color(0xFF604B7A)
+}
+
 @Composable
-private fun MovieFilters(
-    movies: List<Movie>,
-    country: String,
-    year: String,
-    genre: String,
-    onCountry: (String) -> Unit,
-    onYear: (String) -> Unit,
-    onGenre: (String) -> Unit,
-    onReset: () -> Unit
+private fun PinDialog(
+    profile: UserProfile,
+    title: String,
+    confirmText: String,
+    externalError: String = "",
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
 ) {
-    val countries = listOf("Tất cả") +
-        movies.flatMap { it.countries }
-            .distinct()
-            .sorted()
+    var pin by remember(profile.id, title) { mutableStateOf("") }
+    var error by remember(profile.id, title) { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text(title, color = MaterialTheme.colorScheme.onSurface) },
+        text = {
+            Column {
+                Text("${profile.avatar}  ${profile.name}", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 10.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = {
+                        if (it.length <= 4 && it.all(Char::isDigit)) {
+                            pin = it
+                            error = ""
+                        }
+                    },
+                    label = { Text("Mã PIN 4 chữ số") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation()
+                )
+                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                if (externalError.isNotBlank()) Text(externalError, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (pin.length != 4) error = "Hãy nhập đủ 4 chữ số."
+                else onConfirm(pin)
+            }) { Text(confirmText, color = MaterialTheme.colorScheme.primary) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Hủy", color = MaterialTheme.colorScheme.onSurface) }
+        }
+    )
+}
 
-    val years = listOf("Tất cả") +
-        movies.map { it.year }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .sortedDescending()
-
-    val genres = listOf("Tất cả") +
-        movies.flatMap { it.genres }
-            .distinct()
-            .sorted()
+@Composable
+private fun ProfileManager(
+    profiles: List<UserProfile>,
+    onSave: (List<UserProfile>) -> Unit,
+    onClose: () -> Unit
+) {
+    var editing by remember { mutableStateOf<UserProfile?>(null) }
+    var editName by remember { mutableStateOf("") }
+    var editAvatar by remember { mutableStateOf("") }
+    var editKids by remember { mutableStateOf(false) }
+    var editPinEnabled by remember { mutableStateOf(false) }
+    var editPin by remember { mutableStateOf("") }
+    var showPin by remember { mutableStateOf(false) }
+    var pendingSave by remember { mutableStateOf<UserProfile?>(null) }
+    var pendingPin by remember { mutableStateOf("") }
 
     Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(bottom = 8.dp)
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState()).padding(20.dp)
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "LỌC PHIM",
-                color = Red,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(Modifier.weight(1f))
-
-            TextButton(onClick = onReset) {
-                Text("Xóa bộ lọc", color = White, fontSize = 11.sp)
+        Text("QUẢN LÝ HỒ SƠ", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Hồ sơ của bạn", color = MaterialTheme.colorScheme.onSurface, fontSize = 26.sp, fontWeight = FontWeight.Black)
+        Text("Mỗi hồ sơ có danh sách yêu thích và lịch sử xem riêng.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+        profiles.forEach { profile ->
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface)
+                    .clickable {
+                        editing = profile
+                        editName = profile.name
+                        editAvatar = profile.avatar
+                        editKids = profile.isKids
+                        editPinEnabled = profile.pinEnabled
+                        editPin = ""
+                    }.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(profileColor(profile.id)), contentAlignment = Alignment.Center) {
+                    Text(profile.avatar, fontSize = 25.sp)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(profile.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Text(if (profile.isKids) "Hồ sơ trẻ em" else if (profile.pinEnabled) "Đã bật khóa PIN" else "Không khóa PIN", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+                Text("Sửa ›", color = MaterialTheme.colorScheme.primary)
             }
         }
+        Spacer(Modifier.height(18.dp))
+        Button(onClick = onClose, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) { Text("Hoàn tất") }
+    }
 
-        MovieFilterRow(
-            title = "Quốc gia",
-            options = countries,
-            selected = country,
-            onSelect = onCountry
+    editing?.let { profile ->
+        AlertDialog(
+            onDismissRequest = { editing = null },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Sửa hồ sơ", color = MaterialTheme.colorScheme.onSurface) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = editName, onValueChange = { editName = it.take(24) }, label = { Text("Tên hồ sơ") }, singleLine = true)
+                    OutlinedTextField(value = editAvatar, onValueChange = { editAvatar = it.take(4) }, label = { Text("Biểu tượng / emoji") }, singleLine = true)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = editKids, onCheckedChange = { editKids = it })
+                        Text("Hồ sơ trẻ em", color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = editPinEnabled, onCheckedChange = { editPinEnabled = it })
+                        Text("Yêu cầu PIN khi mở hồ sơ", color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    if (editPinEnabled) {
+                        OutlinedTextField(
+                            value = editPin,
+                            onValueChange = { if (it.length <= 4 && it.all(Char::isDigit)) editPin = it },
+                            label = { Text(if (profile.pinEnabled) "PIN mới (để trống nếu giữ PIN cũ)" else "Đặt PIN 4 chữ số") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation()
+                        )
+                        Text("Nếu tắt khóa, hồ sơ sẽ mở trực tiếp.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val name = editName.trim()
+                    if (name.isBlank()) return@TextButton
+                    if (editPinEnabled && !profile.pinEnabled && editPin.length != 4) {
+                        showPin = true
+                        return@TextButton
+                    }
+                    if (editPinEnabled && editPin.isNotEmpty() && editPin.length != 4) {
+                        showPin = true
+                        return@TextButton
+                    }
+                    val updatedProfile = profile.copy(
+                        name = name,
+                        avatar = editAvatar.ifBlank { "🎬" },
+                        isKids = editKids,
+                        pinEnabled = editPinEnabled,
+                        pin = if (!editPinEnabled) "" else if (editPin.length == 4) editPin else profile.pin
+                    )
+                    onSave(profiles.map { if (it.id == profile.id) updatedProfile else it })
+                    editing = null
+                }) { Text("Lưu", color = MaterialTheme.colorScheme.primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = { editing = null }) { Text("Hủy", color = MaterialTheme.colorScheme.onSurface) }
+            }
         )
-
-        MovieFilterRow(
-            title = "Năm sản xuất",
-            options = years,
-            selected = year,
-            onSelect = onYear
-        )
-
-        MovieFilterRow(
-            title = "Thể loại",
-            options = genres,
-            selected = genre,
-            onSelect = onGenre
+    }
+    if (showPin) {
+        AlertDialog(
+            onDismissRequest = { showPin = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("Cần mã PIN hợp lệ", color = MaterialTheme.colorScheme.onSurface) },
+            text = { Text("Khi bật khóa mới, hãy nhập đủ 4 chữ số rồi nhấn Lưu.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            confirmButton = { TextButton(onClick = { showPin = false }) { Text("Đã hiểu", color = MaterialTheme.colorScheme.primary) } }
         )
     }
 }
@@ -445,29 +552,45 @@ private fun MovieFilters(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val isTv = packageManager.hasSystemFeature(
-            PackageManager.FEATURE_LEANBACK
-        )
-
+        val isTv = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
         setContent {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Red,
-                    background = Black,
-                    surface = Panel
+            var appSettings by remember { mutableStateOf(AppSettings.read(this@MainActivity)) }
+            val darkTheme = when (appSettings.theme) {
+                AppSettings.THEME_LIGHT -> false
+                AppSettings.THEME_DARK -> true
+                else -> isSystemInDarkTheme()
+            }
+            val accent = Color(appSettings.accentArgb.toInt())
+            val scheme = if (darkTheme) {
+                darkColorScheme(primary = accent, secondary = accent, background = Black, surface = Panel, onBackground = White, onSurface = White)
+            } else {
+                lightColorScheme(primary = accent, secondary = accent, background = Color(0xFFF5F5F5), surface = Color.White, onBackground = Color(0xFF171717), onSurface = Color(0xFF171717))
+            }
+            MaterialTheme(colorScheme = scheme) {
+                VietStreamApp(
+                    isTv = isTv,
+                    appSettings = appSettings,
+                    onSettingsChanged = { appSettings = AppSettings.read(this@MainActivity) }
                 )
-            ) {
-                VietStreamApp(isTv = isTv)
             }
         }
     }
 }
 
 @Composable
-fun VietStreamApp(isTv: Boolean = false) {
+fun VietStreamApp(
+    isTv: Boolean = false,
+    appSettings: AppSettings.Settings,
+    onSettingsChanged: () -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var profiles by remember { mutableStateOf(readProfiles(context)) }
+    var activeProfile by remember { mutableStateOf<UserProfile?>(null) }
+    var needsProfilePicker by remember { mutableStateOf(true) }
+    var managingProfiles by remember { mutableStateOf(false) }
+    var pinTarget by remember { mutableStateOf<UserProfile?>(null) }
+    var pinError by remember { mutableStateOf("") }
 
     var tab by remember { mutableStateOf("Trang chủ") }
     var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
@@ -476,70 +599,94 @@ fun VietStreamApp(isTv: Boolean = false) {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var detailText by remember { mutableStateOf("") }
-
-    var episodeServers by remember {
-        mutableStateOf<List<EpisodeServer>>(emptyList())
-    }
-
-    var favorites by remember {
-        mutableStateOf(readMovieList(context, FAVORITES_KEY))
-    }
-
-    var history by remember {
-        mutableStateOf(readMovieList(context, HISTORY_KEY))
-    }
-
+    var episodeServers by remember { mutableStateOf<List<EpisodeServer>>(emptyList()) }
     var filterCountry by remember { mutableStateOf("Tất cả") }
     var filterYear by remember { mutableStateOf("Tất cả") }
     var filterGenre by remember { mutableStateOf("Tất cả") }
 
-    fun resetFilters() {
-        filterCountry = "Tất cả"
-        filterYear = "Tất cả"
-        filterGenre = "Tất cả"
+    val profile = activeProfile
+    val favorites = remember(profile?.id) {
+        mutableStateOf(if (profile == null) emptyList() else readMovieList(context, profile.id, "favorites"))
+    }
+    val history = remember(profile?.id) {
+        mutableStateOf(if (profile == null) emptyList() else readMovieList(context, profile.id, "history"))
+    }
+    val favoriteList = favorites.value
+    val historyList = history.value
+
+    fun updateFavorites(updated: List<Movie>) {
+        favorites.value = updated
+        if (profile != null) saveMovieList(context, profile.id, "favorites", updated)
+    }
+
+    fun updateHistory(updated: List<Movie>) {
+        history.value = updated
+        if (profile != null) saveMovieList(context, profile.id, "history", updated)
     }
 
     fun toggleFavorite(movie: Movie) {
-        val updated = if (favorites.any { it.slug == movie.slug }) {
-            favorites.filterNot { it.slug == movie.slug }
-        } else {
-            listOf(movie) + favorites
-        }
-
-        favorites = updated
-        saveMovieList(context, FAVORITES_KEY, updated)
+        updateFavorites(
+            if (favoriteList.any { it.slug == movie.slug }) favoriteList.filterNot { it.slug == movie.slug }
+            else listOf(movie) + favoriteList
+        )
     }
 
     fun addToHistory(movie: Movie) {
-        val updated = (
-            listOf(movie) + history.filter { it.slug != movie.slug }
-        ).take(100)
+        updateHistory((listOf(movie) + historyList.filter { it.slug != movie.slug }).take(100))
+    }
 
-        history = updated
-        saveMovieList(context, HISTORY_KEY, updated)
+    fun runSearch() {
+        if (keyword.isBlank()) return
+        scope.launch {
+            loading = true
+            error = ""
+            try {
+                var results = parseMovies(MovieService.api.search(keyword.trim()))
+                // Hồ sơ trẻ em chỉ tìm trong danh mục hoạt hình.
+                if (profile?.isKids == true) {
+                    results = results.filter { movie ->
+                        movie.genres.orEmpty().any { it.contains("hoạt hình", true) || it.contains("animation", true) || it.contains("cartoon", true) }
+                    }
+                }
+                movies = results
+                if (movies.isEmpty()) error = "Không tìm thấy phim phù hợp."
+            } catch (e: Exception) {
+                error = "Tìm kiếm thất bại: ${e.message ?: "Lỗi kết nối"}"
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    fun selectProfile(target: UserProfile) {
+        if (target.pinEnabled) {
+            pinTarget = target
+            pinError = ""
+        } else {
+            activeProfile = target
+            needsProfilePicker = false
+            managingProfiles = false
+            tab = "Trang chủ"
+        }
     }
 
     suspend fun loadMovies(section: String) {
         loading = true
         error = ""
-
         try {
             movies = when (section) {
-                "Phim lẻ" ->
-                    parseMovies(MovieService.api.list("phim-le"))
-                "Phim bộ" ->
-                    parseMovies(MovieService.api.list("phim-bo"))
-                "Hoạt hình" ->
-                    parseMovies(MovieService.api.list("hoat-hinh"))
-                "Yêu thích" -> favorites
-                "Lịch sử" -> history
+                "Phim lẻ" -> parseMovies(MovieService.api.list("phim-le"))
+                "Phim bộ" -> parseMovies(MovieService.api.list("phim-bo"))
+                "Hoạt hình" -> parseMovies(MovieService.api.list("hoat-hinh"))
+                "Trang chủ" -> if (profile?.isKids == true) parseMovies(MovieService.api.list("hoat-hinh")) else parseMovies(MovieService.api.home())
+                "Yêu thích" -> favoriteList
+                "Lịch sử" -> historyList
                 else -> parseMovies(MovieService.api.home())
             }
-
             if (movies.isEmpty()) {
                 error = when (section) {
-                    "Yêu thích" -> "Bạn chưa thêm phim yêu thích."
-                    "Lịch sử" -> "Bạn chưa xem phim nào."
+                    "Yêu thích" -> "Hồ sơ này chưa có phim yêu thích."
+                    "Lịch sử" -> "Hồ sơ này chưa xem phim nào."
                     else -> "Chưa có dữ liệu cho danh mục này."
                 }
             }
@@ -550,82 +697,96 @@ fun VietStreamApp(isTv: Boolean = false) {
         }
     }
 
-    LaunchedEffect(tab) {
-        resetFilters()
-
-        if (tab != "Tìm kiếm" && tab != "Cài đặt") {
+    LaunchedEffect(tab, profile?.id, needsProfilePicker, managingProfiles) {
+        if (profile != null && !needsProfilePicker && !managingProfiles &&
+            tab != "Tìm kiếm" && tab != "Cài đặt") {
             loadMovies(tab)
         }
     }
 
-    LaunchedEffect(favorites, history, tab) {
+    LaunchedEffect(favoriteList, historyList, tab, profile?.id) {
         when (tab) {
             "Yêu thích" -> {
-                movies = favorites
-                error = if (favorites.isEmpty()) {
-                    "Bạn chưa thêm phim yêu thích."
-                } else ""
+                movies = favoriteList
+                error = if (favoriteList.isEmpty()) "Hồ sơ này chưa có phim yêu thích." else ""
             }
-
             "Lịch sử" -> {
-                movies = history
-                error = if (history.isEmpty()) {
-                    "Bạn chưa xem phim nào."
-                } else ""
+                movies = historyList
+                error = if (historyList.isEmpty()) "Hồ sơ này chưa xem phim nào." else ""
             }
         }
     }
 
     LaunchedEffect(selected?.slug) {
         val movie = selected ?: return@LaunchedEffect
-
         detailText = "Đang tải thông tin phim..."
         episodeServers = emptyList()
-
         try {
             val response = MovieService.api.detail(movie.slug)
-
-            val info = try {
-                response.getAsJsonObject("movie")
-            } catch (_: Exception) {
-                null
-            }
-
-            detailText = info?.let { jsonText(it, "content") }
-                .orEmpty()
-                .replace(Regex("<[^>]*>"), " ")
-                .replace("&nbsp;", " ")
-                .trim()
-                .ifBlank {
-                    movie.description.ifBlank { "Chưa có giới thiệu." }
-                }
-
+            val info = try { response.getAsJsonObject("movie") } catch (_: Exception) { null }
+            detailText = info?.let { jsonText(it, "content") }.orEmpty()
+                .replace(Regex("<[^>]*>"), " ").replace("&nbsp;", " ").trim()
+                .ifBlank { movie.description.ifBlank { "Chưa có giới thiệu." } }
             episodeServers = parseEpisodeServers(response)
-
-            if (episodeServers.isEmpty()) {
-                detailText += "\n\nChưa có máy chủ hoặc tập phim khả dụng."
-            }
+            if (episodeServers.isEmpty()) detailText += "\n\nChưa có máy chủ hoặc tập phim khả dụng."
         } catch (e: Exception) {
-            detailText = "Không tải được chi tiết phim: ${
-                e.message ?: "Lỗi kết nối"
-            }"
+            detailText = "Không tải được chi tiết phim: ${e.message ?: "Lỗi kết nối"}"
         }
     }
 
-    // ĐÃ BỎ LIVE TV KHỎI DANH SÁCH ĐIỀU HƯỚNG
-    val tabs = listOf(
-        "Trang chủ",
-        "Phim lẻ",
-        "Phim bộ",
-        "Hoạt hình",
-        "Cài đặt"
-    )
+    val tabs = if (profile?.isKids == true) {
+        listOf("Trang chủ", "Hoạt hình", "Cài đặt")
+    } else {
+        listOf("Trang chủ", "Phim lẻ", "Phim bộ", "Hoạt hình", "Cài đặt")
+    }
+
+    if (needsProfilePicker) {
+        if (managingProfiles) {
+            ProfileManager(
+                profiles = profiles,
+                onSave = {
+                    profiles = it
+                    saveProfiles(context, it)
+                },
+                onClose = { managingProfiles = false }
+            )
+        } else {
+            ProfilePickerScreen(
+                profiles = profiles,
+                onSelect = { selectProfile(it) },
+                onManage = { managingProfiles = true }
+            )
+        }
+        pinTarget?.let { target ->
+            PinDialog(
+                profile = target,
+                title = "Nhập PIN hồ sơ",
+                confirmText = "Mở hồ sơ",
+                externalError = pinError,
+                onDismiss = { pinTarget = null; pinError = "" },
+                onConfirm = { entered ->
+                    if (entered == target.pin) {
+                        activeProfile = target
+                        needsProfilePicker = false
+                        managingProfiles = false
+                        pinTarget = null
+                        pinError = ""
+                        tab = "Trang chủ"
+                    } else {
+                        pinError = "Mã PIN không đúng."
+                        Toast.makeText(context, pinError, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+        }
+        return
+    }
 
     Scaffold(
-        containerColor = Black,
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             if (!isTv) {
-                NavigationBar(containerColor = Panel) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                     tabs.forEach { item ->
                         NavigationBarItem(
                             selected = tab == item,
@@ -637,18 +798,15 @@ fun VietStreamApp(isTv: Boolean = false) {
                                         "Phim lẻ" -> "▶"
                                         "Phim bộ" -> "▣"
                                         "Hoạt hình" -> "★"
-                                        "Cài đặt" -> "⚙"
-                                        else -> "•"
+                                        else -> "⚙"
                                     },
-                                    color = if (tab == item) Red else Gray
+                                    color = if (tab == item) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             },
-                            label = {
-                                Text(item, fontSize = 9.sp, maxLines = 1)
-                            },
+                            label = { Text(item, fontSize = 9.sp, maxLines = 1) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedTextColor = White,
-                                unselectedTextColor = Gray,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 indicatorColor = Color(0xFF382020)
                             )
                         )
@@ -657,454 +815,184 @@ fun VietStreamApp(isTv: Boolean = false) {
             }
         }
     ) { padding ->
-        Row(
-            Modifier
-                .fillMaxSize()
-                .background(Black)
-                .padding(padding)
-        ) {
+        Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(padding)) {
             if (isTv) {
-                Column(
-                    Modifier
-                        .width(190.dp)
-                        .fillMaxHeight()
-                        .background(Panel)
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        "VIETSTREAM",
-                        color = Red,
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.Black,
-                        modifier = Modifier.padding(12.dp)
-                    )
-
-                    tabs.forEach { item ->
-                        TvNavigationItem(item, tab == item) {
-                            tab = item
-                        }
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    TvNavigationItem("Tìm kiếm", tab == "Tìm kiếm") {
-                        tab = "Tìm kiếm"
-                    }
-
-                    TvNavigationItem("Yêu thích", tab == "Yêu thích") {
-                        tab = "Yêu thích"
-                    }
-
-                    TvNavigationItem("Lịch sử", tab == "Lịch sử") {
-                        tab = "Lịch sử"
+                Column(Modifier.width(190.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("VIETSTREAM", color = MaterialTheme.colorScheme.primary, fontSize = 19.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(12.dp))
+                    tabs.forEach { item -> TvNavigationItem(item, tab == item) { tab = item } }
+                    if (profile?.isKids != true) {
+                        TvNavigationItem("Tìm kiếm", tab == "Tìm kiếm") { tab = "Tìm kiếm" }
+                        TvNavigationItem("Yêu thích", tab == "Yêu thích") { tab = "Yêu thích" }
+                        TvNavigationItem("Lịch sử", tab == "Lịch sử") { tab = "Lịch sử" }
                     }
                 }
             }
 
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .background(Black)
-            ) {
-                // HEADER
+            Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                 Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            horizontal = if (isTv) 28.dp else 18.dp,
-                            vertical = 12.dp
-                        ),
+                    Modifier.fillMaxWidth().padding(horizontal = if (isTv) 28.dp else 18.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "N",
-                        color = Red,
-                        fontSize = if (isTv) 40.sp else 32.sp,
-                        fontWeight = FontWeight.Black
-                    )
-
+                    Text("N", color = MaterialTheme.colorScheme.primary, fontSize = if (isTv) 40.sp else 32.sp, fontWeight = FontWeight.Black)
                     Spacer(Modifier.width(8.dp))
-
                     Column {
                         Row {
-                            Text(
-                                "VIET",
-                                color = Red,
-                                fontSize = 19.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                            Text(
-                                "STREAM",
-                                color = White,
-                                fontSize = 19.sp,
-                                fontWeight = FontWeight.Black
-                            )
+                            Text("VIET", color = MaterialTheme.colorScheme.primary, fontSize = 19.sp, fontWeight = FontWeight.Black)
+                            Text("STREAM", color = MaterialTheme.colorScheme.onSurface, fontSize = 19.sp, fontWeight = FontWeight.Black)
                         }
-
-                        Text(
-                            "MAX",
-                            color = Gray,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 3.sp
-                        )
+                        Text("MAX", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
                     }
-
                     Spacer(Modifier.weight(1f))
-
-                    if (!isTv) {
-                        TextButton(onClick = { tab = "Tìm kiếm" }) {
-                            Text("⌕ Tìm kiếm", color = White)
-                        }
+                    TextButton(onClick = { needsProfilePicker = true; selected = null }) {
+                        Text("${profile?.avatar ?: "👤"} ${profile?.name ?: "Hồ sơ"}", color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                    }
+                    if (!isTv && profile?.isKids != true) {
+                        TextButton(onClick = { tab = "Tìm kiếm" }) { Text("⌕", color = MaterialTheme.colorScheme.onSurface) }
                     }
                 }
 
                 when (tab) {
-                    "Cài đặt" -> {
-                        SettingsScreen(
-                            isTv = isTv,
-                            favoriteCount = favorites.size,
-                            historyCount = history.size,
-                            onNavigate = { tab = it },
-                            onClearFavorites = {
-                                favorites = emptyList()
-                                saveMovieList(
-                                    context,
-                                    FAVORITES_KEY,
-                                    emptyList()
-                                )
-                            },
-                            onClearHistory = {
-                                history = emptyList()
-                                saveMovieList(
-                                    context,
-                                    HISTORY_KEY,
-                                    emptyList()
-                                )
-                            }
-                        )
-                    }
-
+                    "Cài đặt" -> SettingsScreen(
+                        isTv = isTv,
+                        isKids = profile?.isKids == true,
+                        favoriteCount = favoriteList.size,
+                        historyCount = historyList.size,
+                        appSettings = appSettings,
+                        onSettingsChanged = onSettingsChanged,
+                        onNavigate = { tab = it },
+                        onClearFavorites = { updateFavorites(emptyList()) },
+                        onClearHistory = { updateHistory(emptyList()) }
+                    )
                     else -> {
-                        if (tab == "Tìm kiếm") {
-                            OutlinedTextField(
-                                value = keyword,
-                                onValueChange = { keyword = it },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp),
-                                singleLine = true,
-                                placeholder = {
-                                    Text("Nhập tên phim...")
-                                },
-                                trailingIcon = {
-                                    TextButton(onClick = {
-                                        if (keyword.isNotBlank()) {
-                                            scope.launch {
-                                                loading = true
-                                                error = ""
+                        val visibleMovies = movies.filter { movie ->
+                            (filterCountry == "Tất cả" || movie.countries.orEmpty().any { it.equals(filterCountry, true) }) &&
+                                (filterYear == "Tất cả" || movie.year == filterYear) &&
+                                (filterGenre == "Tất cả" || movie.genres.orEmpty().any { it.equals(filterGenre, true) })
+                        }
+                        val movieRows = visibleMovies.chunked(if (isTv) 4 else 2)
 
-                                                try {
-                                                    movies = parseMovies(
-                                                        MovieService.api.search(
-                                                            keyword.trim()
-                                                        )
-                                                    )
+                        // Toàn bộ nội dung phim, bộ lọc và poster dùng chung một vùng cuộn.
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (tab == "Tìm kiếm") {
+                                item(key = "search_field") {
+                                    OutlinedTextField(
+                                        value = keyword,
+                                        onValueChange = { keyword = it },
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                        keyboardActions = KeyboardActions(onSearch = { runSearch() }),
+                                        placeholder = { Text("Nhập tên phim...") },
+                                        trailingIcon = {
+                                            TextButton(onClick = { runSearch() }) { Text("Tìm", color = MaterialTheme.colorScheme.primary) }
+                                        }
+                                    )
+                                }
+                            }
 
-                                                    error = if (movies.isEmpty()) {
-                                                        "Không tìm thấy phim."
-                                                    } else ""
-                                                } catch (e: Exception) {
-                                                    error =
-                                                        "Tìm kiếm thất bại: ${
-                                                            e.message
-                                                        }"
-                                                } finally {
-                                                    loading = false
-                                                }
+                            if (tab == "Yêu thích" || tab == "Lịch sử") {
+                                item(key = "list_title") {
+                                    Text(tab, color = MaterialTheme.colorScheme.onSurface, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                                }
+                            }
+
+                            if (tab == "Trang chủ" && movies.isNotEmpty()) {
+                                item(key = "hero_banner") {
+                                    val hero = movies.first()
+                                    Box(
+                                        Modifier.fillMaxWidth().height(if (isTv) 300.dp else 225.dp).padding(horizontal = 12.dp)
+                                            .clip(RoundedCornerShape(16.dp)).clickable { selected = hero }
+                                    ) {
+                                        MoviePoster(hero.poster, hero.name, Modifier.fillMaxSize())
+                                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.95f)))))
+                                        Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+                                            Text("VIETSTREAM MAX", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                            Text(hero.name, color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 30.sp else 22.sp, fontWeight = FontWeight.Black, maxLines = 2)
+                                            Text("${hero.year} • ${hero.origin}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                                            Spacer(Modifier.height(8.dp))
+                                            Button(onClick = { selected = hero }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) {
+                                                Text("▶  Xem ngay")
                                             }
                                         }
-                                    }) {
-                                        Text("Tìm", color = Red)
                                     }
                                 }
-                            )
-                        }
+                            }
 
-                        if (tab == "Yêu thích" || tab == "Lịch sử") {
-                            Text(
-                                tab,
-                                color = White,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(16.dp)
-                            )
-                        }
-
-                        // PHIM NỔI BẬT
-                        if (tab == "Trang chủ" && movies.isNotEmpty()) {
-                            val hero = movies.first()
-
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height(if (isTv) 300.dp else 225.dp)
-                                    .padding(horizontal = 12.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .clickable { selected = hero }
-                            ) {
-                                MoviePoster(
-                                    hero.poster,
-                                    hero.name,
-                                    Modifier.fillMaxSize()
-                                )
-
-                                Box(
-                                    Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(
-                                                    Color.Transparent,
-                                                    Color.Black.copy(alpha = 0.95f)
-                                                )
-                                            )
-                                        )
-                                )
-
-                                Column(
-                                    Modifier
-                                        .align(Alignment.BottomStart)
-                                        .padding(16.dp)
-                                ) {
+                            item(key = "movie_section_title") {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        "VIETSTREAM MAX",
-                                        color = Red,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Black
+                                        when (tab) {
+                                            "Trang chủ" -> "Phim mới cập nhật"
+                                            "Tìm kiếm" -> "Kết quả tìm kiếm"
+                                            else -> tab
+                                        },
+                                        color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 25.sp else 19.sp, fontWeight = FontWeight.Bold
                                     )
+                                    Spacer(Modifier.weight(1f))
+                                    if (loading) CircularProgressIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+                                }
+                            }
 
-                                    Text(
-                                        hero.name,
-                                        color = White,
-                                        fontSize = if (isTv) 30.sp else 22.sp,
-                                        fontWeight = FontWeight.Black,
-                                        maxLines = 2
+                            if (movies.isNotEmpty()) {
+                                item(key = "movie_filters") {
+                                    MovieFilters(
+                                        movies = movies, country = filterCountry, year = filterYear, genre = filterGenre,
+                                        onCountry = { filterCountry = it }, onYear = { filterYear = it }, onGenre = { filterGenre = it },
+                                        onReset = { filterCountry = "Tất cả"; filterYear = "Tất cả"; filterGenre = "Tất cả" }
                                     )
+                                }
+                            }
 
-                                    Text(
-                                        "${hero.year} • ${hero.origin}",
-                                        color = Gray,
-                                        fontSize = 11.sp
-                                    )
-
-                                    Spacer(Modifier.height(8.dp))
-
-                                    Button(
-                                        onClick = { selected = hero },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Red
-                                        )
+                            when {
+                                loading -> item(key = "loading_state") {
+                                    Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                                error.isNotBlank() -> item(key = "error_state") {
+                                    Box(Modifier.fillMaxWidth().padding(18.dp), contentAlignment = Alignment.Center) {
+                                        Text(error, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                movies.isEmpty() -> item(key = "empty_state") {
+                                    Box(Modifier.fillMaxWidth().height(140.dp), contentAlignment = Alignment.Center) {
+                                        Text("Chưa có dữ liệu phim.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                visibleMovies.isEmpty() -> item(key = "filtered_empty_state") {
+                                    Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                                        Text("Không có phim phù hợp với bộ lọc.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                else -> lazyItems(items = movieRows, key = { row -> row.first().slug }) { row ->
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(horizontal = if (isTv) 22.dp else 12.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(if (isTv) 18.dp else 12.dp),
+                                        verticalAlignment = Alignment.Top
                                     ) {
-                                        Text("▶  Xem ngay")
-                                    }
-                                }
-                            }
-                        }
-
-                        // TIÊU ĐỀ DANH SÁCH
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = 16.dp,
-                                    vertical = 10.dp
-                                ),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                when (tab) {
-                                    "Trang chủ" -> "Phim mới cập nhật"
-                                    "Tìm kiếm" -> "Kết quả tìm kiếm"
-                                    else -> tab
-                                },
-                                color = White,
-                                fontSize = if (isTv) 25.sp else 19.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-
-                            Spacer(Modifier.weight(1f))
-
-                            if (loading) {
-                                CircularProgressIndicator(
-                                    Modifier.size(20.dp),
-                                    color = Red,
-                                    strokeWidth = 2.dp
-                                )
-                            }
-                        }
-
-                        // LỌC PHIM
-                        val visibleMovies = movies.filter { movie ->
-                            val matchesCountry =
-                                filterCountry == "Tất cả" ||
-                                    movie.countries.any {
-                                        it.equals(filterCountry, true)
-                                    }
-
-                            val matchesYear =
-                                filterYear == "Tất cả" ||
-                                    movie.year == filterYear
-
-                            val matchesGenre =
-                                filterGenre == "Tất cả" ||
-                                    movie.genres.any {
-                                        it.equals(filterGenre, true)
-                                    }
-
-                            matchesCountry && matchesYear && matchesGenre
-                        }
-
-                        // DANH SÁCH PHIM
-                        when {
-                            loading -> {
-                                Box(
-                                    Modifier
-                                        .weight(1f)
-                                        .fillMaxWidth(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(color = Red)
-                                }
-                            }
-
-                            error.isNotBlank() -> {
-                                Box(
-                                    Modifier
-                                        .weight(1f)
-                                        .fillMaxWidth()
-                                        .padding(18.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(error, color = Gray)
-                                }
-                            }
-
-                            movies.isEmpty() -> {
-                                Box(
-                                    Modifier
-                                        .weight(1f)
-                                        .fillMaxWidth(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("Chưa có dữ liệu phim.", color = Gray)
-                                }
-                            }
-
-                            visibleMovies.isEmpty() -> {
-                                Box(
-                                    Modifier
-                                        .weight(1f)
-                                        .fillMaxWidth()
-                                        .padding(20.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        "Không có phim phù hợp với bộ lọc.",
-                                        color = Gray
-                                    )
-                                }
-                            }
-
-                            else -> {
-                                // QUAN TRỌNG:
-                                // Bộ lọc và poster nằm trong CÙNG LazyVerticalGrid.
-                                // Khi vuốt danh sách phim, bộ lọc cũng cuộn lên.
-                                LazyVerticalGrid(
-                                    columns = GridCells.Adaptive(
-                                        minSize = if (isTv) 190.dp else 145.dp
-                                    ),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxWidth(),
-                                    contentPadding = PaddingValues(
-                                        if (isTv) 22.dp else 12.dp
-                                    ),
-                                    horizontalArrangement = Arrangement.spacedBy(
-                                        if (isTv) 18.dp else 12.dp
-                                    ),
-                                    verticalArrangement = Arrangement.spacedBy(
-                                        if (isTv) 22.dp else 16.dp
-                                    )
-                                ) {
-                                    // BỘ LỌC LÀ MỘT PHẦN CỦA VÙNG CUỘN
-                                    if (
-                                        movies.isNotEmpty() &&
-                                        tab != "Cài đặt"
-                                    ) {
-                                        item(
-                                            span = {
-                                                GridItemSpan(maxLineSpan)
-                                            },
-                                            key = "movie_filters"
-                                        ) {
-                                            MovieFilters(
-                                                movies = movies,
-                                                country = filterCountry,
-                                                year = filterYear,
-                                                genre = filterGenre,
-                                                onCountry = {
-                                                    filterCountry = it
-                                                },
-                                                onYear = {
-                                                    filterYear = it
-                                                },
-                                                onGenre = {
-                                                    filterGenre = it
-                                                },
-                                                onReset = {
-                                                    resetFilters()
-                                                }
-                                            )
+                                        row.forEach { movie ->
+                                            Box(Modifier.weight(1f)) {
+                                                MovieCard(movie, favoriteList.any { it.slug == movie.slug }, isTv) { selected = movie }
+                                            }
                                         }
-                                    }
-
-                                    gridItems(
-                                        items = visibleMovies,
-                                        key = { it.slug }
-                                    ) { movie ->
-                                        MovieCard(
-                                            movie = movie,
-                                            favorite = favorites.any {
-                                                it.slug == movie.slug
-                                            },
-                                            isTv = isTv
-                                        ) {
-                                            selected = movie
+                                        repeat((if (isTv) 4 else 2) - row.size) {
+                                            Spacer(Modifier.weight(1f))
                                         }
                                     }
                                 }
                             }
-                        }
 
-                        if (tab == "Tìm kiếm") {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                TextButton(onClick = {
-                                    tab = "Yêu thích"
-                                }) {
-                                    Text("♥ Yêu thích", color = Red)
-                                }
-
-                                TextButton(onClick = {
-                                    tab = "Lịch sử"
-                                }) {
-                                    Text("◷ Lịch sử", color = White)
+                            if (tab == "Tìm kiếm") {
+                                item(key = "search_shortcuts") {
+                                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        TextButton(onClick = { tab = "Yêu thích" }) { Text("♥ Yêu thích", color = MaterialTheme.colorScheme.primary) }
+                                        TextButton(onClick = { tab = "Lịch sử" }) { Text("◷ Lịch sử", color = MaterialTheme.colorScheme.onSurface) }
+                                    }
                                 }
                             }
                         }
@@ -1114,569 +1002,322 @@ fun VietStreamApp(isTv: Boolean = false) {
         }
     }
 
-    // CHI TIẾT PHIM VÀ CHỌN TẬP
     selected?.let { movie ->
         AlertDialog(
             onDismissRequest = { selected = null },
-            containerColor = Panel,
-            title = {
-                Text(
-                    movie.name,
-                    color = White,
-                    fontWeight = FontWeight.Bold
-                )
-            },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text(movie.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold) },
             text = {
-                Column(
-                    Modifier
-                        .heightIn(max = if (isTv) 650.dp else 520.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    MoviePoster(
-                        movie.poster,
-                        movie.name,
-                        Modifier
-                            .fillMaxWidth()
-                            .height(if (isTv) 240.dp else 180.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                    )
-
-                    Text(
-                        "${movie.origin} • ${movie.year}",
-                        color = Red,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-
-                    Text(detailText, color = White, fontSize = 13.sp)
-
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        TextButton(onClick = { toggleFavorite(movie) }) {
-                            Text(
-                                if (favorites.any { it.slug == movie.slug }) {
-                                    "♥ Đã yêu thích"
+                Column(Modifier.heightIn(max = if (isTv) 650.dp else 520.dp).verticalScroll(rememberScrollState())) {
+                    MoviePoster(movie.poster, movie.name, Modifier.fillMaxWidth().height(if (isTv) 240.dp else 180.dp).clip(RoundedCornerShape(10.dp)))
+                    Text("${movie.origin} • ${movie.year}", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(vertical = 8.dp))
+                    Text(detailText, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                    if (movie.lastEpisodeUrl.orEmpty().startsWith("http", true)) {
+                        Button(
+                            onClick = {
+                                addToHistory(movie)
+                                if (movie.lastEpisodeIsM3u8 && movie.lastEpisodeUrls.orEmpty().isNotEmpty()) {
+                                    context.startActivity(Intent(context, InAppPlayerActivity::class.java).apply {
+                                        putExtra("video_title", movie.lastEpisodeTitles.orEmpty().getOrNull(movie.lastEpisodeIndex) ?: "${movie.name} - ${movie.lastEpisodeName.orEmpty()}")
+                                        putStringArrayListExtra("episode_titles", ArrayList(movie.lastEpisodeTitles.orEmpty()))
+                                        putStringArrayListExtra("episode_urls", ArrayList(movie.lastEpisodeUrls.orEmpty()))
+                                        putExtra("episode_index", movie.lastEpisodeIndex.coerceIn(0, movie.lastEpisodeUrls.orEmpty().lastIndex))
+                                    })
                                 } else {
-                                    "♡ Yêu thích"
-                                },
-                                color = Red
-                            )
+                                    context.startActivity(Intent(context, InAppWebActivity::class.java).apply {
+                                        putExtra("web_title", "${movie.name} - ${movie.lastEpisodeName.orEmpty()}")
+                                        putExtra("web_url", movie.lastEpisodeUrl)
+                                    })
+                                }
+                                selected = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("▶  Tiếp tục xem ${movie.lastEpisodeName.orEmpty()}".take(80), color = MaterialTheme.colorScheme.onSurface) }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { toggleFavorite(movie) }) {
+                            Text(if (favoriteList.any { it.slug == movie.slug }) "♥ Đã yêu thích" else "♡ Yêu thích", color = MaterialTheme.colorScheme.primary)
                         }
-
-                        TextButton(onClick = {
-                            addToHistory(movie)
-                            selected = null
-                            tab = "Lịch sử"
-                        }) {
-                            Text("◷ Lịch sử xem", color = White)
+                        TextButton(onClick = { addToHistory(movie); selected = null; tab = "Lịch sử" }) {
+                            Text("◷ Lịch sử xem", color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
-
                     Spacer(Modifier.height(14.dp))
-
-                    HorizontalDivider(color = Gray.copy(alpha = 0.3f))
-
-                    Text(
-                        "CHỌN MÁY CHỦ VÀ TẬP",
-                        color = Red,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(vertical = 10.dp)
-                    )
-
-                    if (episodeServers.isEmpty()) {
-                        Text(
-                            "Chưa có tập phim khả dụng.",
-                            color = Gray,
-                            fontSize = 12.sp
-                        )
-                    }
-
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                    Text("CHỌN MÁY CHỦ VÀ TẬP", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp))
+                    if (episodeServers.isEmpty()) Text("Chưa có tập phim khả dụng.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     episodeServers.forEach { server ->
-                        Text(
-                            server.name,
-                            color = White,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(vertical = 6.dp)
-                        )
-
+                        Text(server.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 6.dp))
                         server.episodes.forEach { episode ->
                             Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 3.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFF292929))
+                                Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF292929))
                                     .clickable {
                                         val videoUrl = episode.m3u8.trim()
                                         val embedUrl = episode.embed.trim()
-
-                                        val validM3u8 =
-                                            videoUrl.startsWith("https://", true) ||
-                                                videoUrl.startsWith("http://", true)
-
-                                        val validEmbed =
-                                            embedUrl.startsWith("https://", true) ||
-                                                embedUrl.startsWith("http://", true)
-
+                                        val validM3u8 = videoUrl.startsWith("https://", true) || videoUrl.startsWith("http://", true)
+                                        val validEmbed = embedUrl.startsWith("https://", true) || embedUrl.startsWith("http://", true)
                                         when {
                                             validM3u8 -> {
-                                                val playlist =
-                                                    server.episodes.filter {
-                                                        it.m3u8.startsWith(
-                                                            "https://",
-                                                            true
-                                                        ) || it.m3u8.startsWith(
-                                                            "http://",
-                                                            true
-                                                        )
-                                                    }
-
-                                                val index =
-                                                    playlist.indexOfFirst {
-                                                        it.slug == episode.slug
-                                                    }.coerceAtLeast(0)
-
-                                                addToHistory(movie)
-
-                                                context.startActivity(
-                                                    Intent(
-                                                        context,
-                                                        InAppPlayerActivity::class.java
-                                                    ).apply {
-                                                        putExtra(
-                                                            "video_title",
-                                                            "${movie.name} - ${episode.name}"
-                                                        )
-
-                                                        putStringArrayListExtra(
-                                                            "episode_titles",
-                                                            ArrayList(
-                                                                playlist.map {
-                                                                    "${movie.name} - ${it.name}"
-                                                                }
-                                                            )
-                                                        )
-
-                                                        putStringArrayListExtra(
-                                                            "episode_urls",
-                                                            ArrayList(
-                                                                playlist.map {
-                                                                    it.m3u8.trim()
-                                                                }
-                                                            )
-                                                        )
-
-                                                        putExtra(
-                                                            "episode_index",
-                                                            index
-                                                        )
-                                                    }
-                                                )
-
+                                                val playlist = server.episodes.filter {
+                                                    it.m3u8.startsWith("https://", true) || it.m3u8.startsWith("http://", true)
+                                                }
+                                                val index = playlist.indexOfFirst { it.slug == episode.slug }.coerceAtLeast(0)
+                                                val titles = playlist.map { "${movie.name} - ${it.name}" }
+                                                val urls = playlist.map { it.m3u8.trim() }
+                                                addToHistory(movie.copy(
+                                                    lastEpisodeName = episode.name,
+                                                    lastEpisodeUrl = videoUrl,
+                                                    lastEpisodeIsM3u8 = true,
+                                                    lastEpisodeTitles = titles,
+                                                    lastEpisodeUrls = urls,
+                                                    lastEpisodeIndex = index
+                                                ))
+                                                val episodeTitle = "${movie.name} - ${episode.name}"
+                                                val useVlc = appSettings.player == AppSettings.PLAYER_VLC
+                                                val openedExternally = useVlc && openInVlc(context, videoUrl, episodeTitle)
+                                                if (useVlc && !openedExternally) {
+                                                    Toast.makeText(context, "Không mở được VLC. Hãy cài VLC; app sẽ mở trình phát tích hợp.", Toast.LENGTH_LONG).show()
+                                                }
+                                                if (!openedExternally) {
+                                                    context.startActivity(Intent(context, InAppPlayerActivity::class.java).apply {
+                                                        putExtra("video_title", episodeTitle)
+                                                        putExtra("video_url", videoUrl)
+                                                        putStringArrayListExtra("episode_titles", ArrayList(titles))
+                                                        putStringArrayListExtra("episode_urls", ArrayList(urls))
+                                                        putExtra("episode_index", index)
+                                                    })
+                                                }
                                                 selected = null
                                             }
-
                                             validEmbed -> {
-                                                addToHistory(movie)
-
-                                                context.startActivity(
-                                                    Intent(
-                                                        context,
-                                                        InAppWebActivity::class.java
-                                                    ).apply {
-                                                        putExtra(
-                                                            "web_title",
-                                                            "${movie.name} - ${episode.name}"
-                                                        )
-                                                        putExtra("web_url", embedUrl)
-                                                    }
-                                                )
-
+                                                addToHistory(movie.copy(
+                                                    lastEpisodeName = episode.name,
+                                                    lastEpisodeUrl = embedUrl,
+                                                    lastEpisodeIsM3u8 = false,
+                                                    lastEpisodeTitles = emptyList(),
+                                                    lastEpisodeUrls = emptyList(),
+                                                    lastEpisodeIndex = 0
+                                                ))
+                                                context.startActivity(Intent(context, InAppWebActivity::class.java).apply {
+                                                    putExtra("web_title", "${movie.name} - ${episode.name}")
+                                                    putExtra("web_url", embedUrl)
+                                                })
                                                 selected = null
                                             }
-
-                                            else -> {
-                                                Toast.makeText(
-                                                    context,
-                                                    "Tập này chưa có đường dẫn phát.",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
+                                            else -> Toast.makeText(context, "Tập này chưa có đường dẫn phát.", Toast.LENGTH_SHORT).show()
                                         }
-                                    }
-                                    .padding(12.dp),
+                                    }.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("▶", color = Red)
+                                Text("▶", color = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.width(10.dp))
-
-                                Text(
-                                    episode.name.ifBlank { "Tập phim" },
-                                    color = White,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                Text("Xem", color = Red, fontSize = 12.sp)
+                                Text(episode.name.ifBlank { "Tập phim" }, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+                                Text("Xem", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
                             }
                         }
                     }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { selected = null }) {
-                    Text("Đóng", color = Red)
-                }
-            }
+            confirmButton = { TextButton(onClick = { selected = null }) { Text("Đóng", color = MaterialTheme.colorScheme.primary) } }
         )
     }
 }
 
-// CÀI ĐẶT — ĐÃ BỎ LIVE TV
+// BỘ LỌC PHIM
+
+@Composable
+private fun MovieFilterRow(title: String, options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    if (options.isEmpty()) return
+    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            options.forEach { option ->
+                FilterChip(selected = selected == option, onClick = { onSelect(option) }, label = { Text(option, fontSize = 11.sp, maxLines = 1) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun MovieFilters(
+    movies: List<Movie>, country: String, year: String, genre: String,
+    onCountry: (String) -> Unit, onYear: (String) -> Unit, onGenre: (String) -> Unit, onReset: () -> Unit
+) {
+    val countries = listOf("Tất cả") + movies.flatMap { it.countries.orEmpty() }.distinct().sorted()
+    val years = listOf("Tất cả") + movies.map { it.year }.filter { it.isNotBlank() }.distinct().sortedDescending()
+    val genres = listOf("Tất cả") + movies.flatMap { it.genres.orEmpty() }.distinct().sorted()
+    Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("LỌC PHIM", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = onReset) { Text("Xóa bộ lọc", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp) }
+        }
+        MovieFilterRow("Quốc gia", countries, country, onCountry)
+        MovieFilterRow("Năm sản xuất", years, year, onYear)
+        MovieFilterRow("Thể loại", genres, genre, onGenre)
+    }
+}
+
+// CÀI ĐẶT
 
 @Composable
 private fun SettingsScreen(
-    isTv: Boolean,
-    favoriteCount: Int,
-    historyCount: Int,
-    onNavigate: (String) -> Unit,
-    onClearFavorites: () -> Unit,
-    onClearHistory: () -> Unit
+    isTv: Boolean, isKids: Boolean = false, favoriteCount: Int, historyCount: Int,
+    appSettings: AppSettings.Settings,
+    onSettingsChanged: () -> Unit,
+    onNavigate: (String) -> Unit, onClearFavorites: () -> Unit, onClearHistory: () -> Unit
 ) {
+    val settingsContext = LocalContext.current
+    var languageExpanded by remember { mutableStateOf(false) }
     var showClearFavorites by remember { mutableStateOf(false) }
     var showClearHistory by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState()).padding(horizontal = if (isTv) 28.dp else 18.dp)) {
+        Text("CÀI ĐẶT", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Thiết lập ứng dụng", color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 30.sp else 24.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+        Text("VIETSTREAM MAX", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Black)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = if (isTv) 28.dp else 18.dp)
-    ) {
-        Text(
-            "CÀI ĐẶT",
-            color = Red,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Spacer(Modifier.height(22.dp))
+        Text("GIAO DIỆN", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Chế độ hiển thị", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(AppSettings.THEME_SYSTEM to "Theo hệ thống", AppSettings.THEME_DARK to "Tối", AppSettings.THEME_LIGHT to "Sáng").forEach { (value, label) ->
+                FilterChip(selected = appSettings.theme == value, onClick = { AppSettings.saveTheme(settingsContext, value); onSettingsChanged() }, label = { Text(label, fontSize = 11.sp) })
+            }
+        }
 
-        Text(
-            "Thiết lập ứng dụng",
-            color = White,
-            fontSize = if (isTv) 30.sp else 24.sp,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
-        )
+        Text("Màu chủ đề", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+        val accents = listOf("Đỏ" to 0xFFE50914L, "Xanh dương" to 0xFF2196F3L, "Xanh lá" to 0xFF4CAF50L, "Tím" to 0xFF9C27B0L, "Cam" to 0xFFFF9800L)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            accents.forEach { (label, argb) ->
+                FilterChip(selected = appSettings.accentArgb == argb, onClick = { AppSettings.saveAccent(settingsContext, argb); onSettingsChanged() }, label = { Text(label, fontSize = 11.sp) }, leadingIcon = { Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(Color(argb.toInt()))) })
+            }
+        }
 
-        Text("VIETSTREAM MAX", color = Gray, fontSize = 13.sp)
-
-        Spacer(Modifier.height(24.dp))
-
-        Text(
-            "THƯ VIỆN CỦA BẠN",
-            color = Red,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        SettingsItem(
-            title = "Phim yêu thích",
-            subtitle = "$favoriteCount phim đã lưu",
-            onClick = { onNavigate("Yêu thích") }
-        )
-
-        SettingsItem(
-            title = "Lịch sử xem",
-            subtitle = "$historyCount phim trong lịch sử",
-            onClick = { onNavigate("Lịch sử") }
-        )
-
-        Spacer(Modifier.height(20.dp))
-
-        Text(
-            "KHÁM PHÁ",
-            color = Red,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        SettingsItem(
-            title = "Tìm kiếm phim",
-            subtitle = "Tìm phim theo tên",
-            onClick = { onNavigate("Tìm kiếm") }
-        )
-
-        SettingsItem(
-            title = "Phim lẻ",
-            subtitle = "Khám phá phim lẻ",
-            onClick = { onNavigate("Phim lẻ") }
-        )
-
-        SettingsItem(
-            title = "Phim bộ",
-            subtitle = "Khám phá phim bộ",
-            onClick = { onNavigate("Phim bộ") }
-        )
-
-        SettingsItem(
-            title = "Phim hoạt hình",
-            subtitle = "Khám phá phim hoạt hình",
-            onClick = { onNavigate("Hoạt hình") }
-        )
-
-        // ĐÃ XÓA MỤC LIVE TV
-
-        Spacer(Modifier.height(20.dp))
-
-        Text(
-            "QUẢN LÝ DỮ LIỆU",
-            color = Red,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        SettingsItem(
-            title = "Xóa danh sách yêu thích",
-            subtitle = "Xóa toàn bộ phim đã lưu",
-            onClick = { showClearFavorites = true }
-        )
-
-        SettingsItem(
-            title = "Xóa lịch sử xem",
-            subtitle = "Xóa toàn bộ lịch sử trên thiết bị",
-            onClick = { showClearHistory = true }
-        )
-
-        Spacer(Modifier.height(24.dp))
-
-        HorizontalDivider(color = Gray.copy(alpha = 0.25f))
-
-        Text(
-            "VIETSTREAM MAX • Phiên bản 1.0.0",
-            color = Gray,
-            fontSize = 11.sp,
-            modifier = Modifier.padding(vertical = 18.dp)
-        )
-    }
-
-    if (showClearFavorites) {
-        AlertDialog(
-            onDismissRequest = { showClearFavorites = false },
-            containerColor = Panel,
-            title = { Text("Xóa phim yêu thích?", color = White) },
-            text = {
-                Text(
-                    "Toàn bộ danh sách phim yêu thích sẽ bị xóa.",
-                    color = Gray
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onClearFavorites()
-                    showClearFavorites = false
-                }) {
-                    Text("Xóa", color = Red)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showClearFavorites = false
-                }) {
-                    Text("Hủy", color = White)
+        Text("Ngôn ngữ", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+        val languages = listOf("vi" to "Tiếng Việt", "en" to "English", "zh" to "中文", "ja" to "日本語", "ko" to "한국어", "th" to "ไทย", "fr" to "Français", "es" to "Español")
+        Box {
+            OutlinedButton(onClick = { languageExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(languages.firstOrNull { it.first == appSettings.language }?.second ?: "Tiếng Việt")
+            }
+            DropdownMenu(expanded = languageExpanded, onDismissRequest = { languageExpanded = false }) {
+                languages.forEach { (code, label) ->
+                    DropdownMenuItem(text = { Text(label) }, onClick = {
+                        AppSettings.saveLanguage(settingsContext, code)
+                        languageExpanded = false
+                        onSettingsChanged()
+                    })
                 }
             }
-        )
-    }
+        }
+        Text("Lựa chọn ngôn ngữ đã được lưu. Muốn dịch toàn bộ giao diện cần bổ sung bản dịch cho từng màn hình.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
 
-    if (showClearHistory) {
-        AlertDialog(
-            onDismissRequest = { showClearHistory = false },
-            containerColor = Panel,
-            title = { Text("Xóa lịch sử xem?", color = White) },
-            text = {
-                Text(
-                    "Toàn bộ lịch sử xem trên thiết bị sẽ bị xóa.",
-                    color = Gray
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onClearHistory()
-                    showClearHistory = false
-                }) {
-                    Text("Xóa", color = Red)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showClearHistory = false
-                }) {
-                    Text("Hủy", color = White)
-                }
+        Spacer(Modifier.height(18.dp))
+        Text("TRÌNH PHÁT VÀ ÂM THANH", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Trình phát mặc định", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = appSettings.player == AppSettings.PLAYER_INTERNAL, onClick = { AppSettings.savePlayer(settingsContext, AppSettings.PLAYER_INTERNAL); onSettingsChanged() }, label = { Text("Tích hợp") })
+            FilterChip(selected = appSettings.player == AppSettings.PLAYER_VLC, onClick = { AppSettings.savePlayer(settingsContext, AppSettings.PLAYER_VLC); onSettingsChanged() }, label = { Text("VLC") })
+        }
+        Text("VLC cần được cài trên thiết bị; một số đường dẫn có yêu cầu xác thực có thể không phát được bên ngoài app.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        Text("Ưu tiên âm thanh", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(AppSettings.AUDIO_AUTO to "Tự động", AppSettings.AUDIO_STEREO to "Stereo", AppSettings.AUDIO_DOLBY to "Dolby Atmos").forEach { (value, label) ->
+                FilterChip(selected = appSettings.audioMode == value, onClick = { AppSettings.saveAudioMode(settingsContext, value); onSettingsChanged() }, label = { Text(label, fontSize = 11.sp) })
             }
-        )
+        }
+        Text("Tùy chọn âm thanh hiện được lưu; Dolby Atmos chỉ hoạt động nếu video, trình phát và thiết bị đều hỗ trợ.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+
+        Spacer(Modifier.height(24.dp))
+        Text("THƯ VIỆN CỦA BẠN", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        if (!isKids) {
+            SettingsItem("Phim yêu thích", "$favoriteCount phim đã lưu") { onNavigate("Yêu thích") }
+            SettingsItem("Lịch sử xem", "$historyCount phim trong lịch sử") { onNavigate("Lịch sử") }
+        }
+        Spacer(Modifier.height(20.dp))
+        Text("KHÁM PHÁ", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        if (!isKids) {
+            SettingsItem("Tìm kiếm phim", "Tìm phim theo tên") { onNavigate("Tìm kiếm") }
+            SettingsItem("Phim lẻ", "Khám phá phim lẻ") { onNavigate("Phim lẻ") }
+            SettingsItem("Phim bộ", "Khám phá phim bộ") { onNavigate("Phim bộ") }
+        }
+        SettingsItem("Phim hoạt hình", "Khám phá phim hoạt hình") { onNavigate("Hoạt hình") }
+        Spacer(Modifier.height(20.dp))
+        Text("QUẢN LÝ DỮ LIỆU", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        SettingsItem("Xóa danh sách yêu thích", "Xóa toàn bộ phim đã lưu") { showClearFavorites = true }
+        SettingsItem("Xóa lịch sử xem", "Xóa toàn bộ lịch sử trên thiết bị") { showClearHistory = true }
+        Spacer(Modifier.height(24.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f))
+        Text("VIETSTREAM MAX • Phiên bản 1.0.0", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(vertical = 18.dp))
     }
+    if (showClearFavorites) AlertDialog(
+        onDismissRequest = { showClearFavorites = false }, containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text("Xóa phim yêu thích?", color = MaterialTheme.colorScheme.onSurface) },
+        text = { Text("Toàn bộ danh sách phim yêu thích của hồ sơ hiện tại sẽ bị xóa.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        confirmButton = { TextButton(onClick = { onClearFavorites(); showClearFavorites = false }) { Text("Xóa", color = MaterialTheme.colorScheme.primary) } },
+        dismissButton = { TextButton(onClick = { showClearFavorites = false }) { Text("Hủy", color = MaterialTheme.colorScheme.onSurface) } }
+    )
+    if (showClearHistory) AlertDialog(
+        onDismissRequest = { showClearHistory = false }, containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text("Xóa lịch sử xem?", color = MaterialTheme.colorScheme.onSurface) },
+        text = { Text("Toàn bộ lịch sử xem của hồ sơ hiện tại sẽ bị xóa.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        confirmButton = { TextButton(onClick = { onClearHistory(); showClearHistory = false }) { Text("Xóa", color = MaterialTheme.colorScheme.primary) } },
+        dismissButton = { TextButton(onClick = { showClearHistory = false }) { Text("Hủy", color = MaterialTheme.colorScheme.onSurface) } }
+    )
 }
 
 @Composable
-private fun SettingsItem(
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
-) {
+private fun SettingsItem(title: String, subtitle: String, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 10.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (focused) Color(0xFF292020) else Panel)
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) FocusColor else Color.Transparent,
-                shape = RoundedCornerShape(12.dp)
-            )
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
-            .focusable()
-            .padding(16.dp),
+        Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp))
+            .background(if (focused) Color(0xFF292020) else MaterialTheme.colorScheme.surface)
+            .border(if (focused) 2.dp else 1.dp, if (focused) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(12.dp))
+            .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable().padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                color = White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
-
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-
-            Text(subtitle, color = Gray, fontSize = 12.sp)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
-
-        Text("›", color = Red, fontSize = 24.sp)
+        Text("›", color = MaterialTheme.colorScheme.primary, fontSize = 24.sp)
     }
 }
 
-// ĐIỀU HƯỚNG TV
-
 @Composable
-private fun TvNavigationItem(
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
+private fun TvNavigationItem(text: String, selected: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-
     Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (selected) Color(0xFF382020)
-                else Color.Transparent
-            )
-            .border(
-                if (focused) 2.dp else 1.dp,
-                if (focused) FocusColor else Color.Transparent,
-                RoundedCornerShape(10.dp)
-            )
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
-            .focusable()
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Color(0xFF382020) else Color.Transparent)
+            .border(if (focused) 2.dp else 1.dp, if (focused) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(10.dp))
+            .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable()
             .padding(horizontal = 14.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text,
-            color = if (selected || focused) White else Gray,
-            fontSize = 15.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
-        )
+        Text(text, color = if (selected || focused) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 15.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
     }
 }
 
-// THẺ PHIM
-
 @Composable
-fun MovieCard(
-    movie: Movie,
-    favorite: Boolean = false,
-    isTv: Boolean = false,
-    onClick: () -> Unit
-) {
+fun MovieCard(movie: Movie, favorite: Boolean = false, isTv: Boolean = false, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-
     Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .border(
-                if (focused) 2.dp else 1.dp,
-                if (focused) FocusColor else Color.Transparent,
-                RoundedCornerShape(10.dp)
-            )
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
-            .focusable()
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+            .border(if (focused) 2.dp else 1.dp, if (focused) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(10.dp))
+            .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable()
     ) {
         Box {
-            MoviePoster(
-                movie.poster,
-                movie.name,
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(0.68f)
-                    .clip(RoundedCornerShape(10.dp))
-            )
-
+            MoviePoster(movie.poster, movie.name, Modifier.fillMaxWidth().aspectRatio(0.68f).clip(RoundedCornerShape(10.dp)))
             if (movie.year.isNotBlank()) {
-                Text(
-                    movie.year,
-                    color = White,
-                    fontSize = 10.sp,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(7.dp)
-                        .background(
-                            Color.Black.copy(alpha = 0.75f),
-                            RoundedCornerShape(4.dp)
-                        )
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
-                )
+                Text(movie.year, color = MaterialTheme.colorScheme.onSurface, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomStart).padding(7.dp)
+                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 3.dp))
             }
-
-            if (favorite) {
-                Text(
-                    "♥",
-                    color = Red,
-                    fontSize = 18.sp,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                )
-            }
+            if (favorite) Text("♥", color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp))
         }
-
         Spacer(Modifier.height(7.dp))
-
-        Text(
-            movie.name,
-            color = White,
-            fontSize = if (isTv) 16.sp else 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        Text(
-            movie.origin,
-            color = Gray,
-            fontSize = 10.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Text(movie.name, color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 16.sp else 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(movie.origin, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
