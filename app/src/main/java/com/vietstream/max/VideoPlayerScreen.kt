@@ -1,9 +1,13 @@
+
 package com.vietstream.max
 
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -21,13 +25,13 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 
 @UnstableApi
 class InAppPlayerActivity : Activity() {
 
     private var player: ExoPlayer? = null
-
     private lateinit var playerView: PlayerView
     private lateinit var titleView: TextView
     private lateinit var topBar: LinearLayout
@@ -37,10 +41,21 @@ class InAppPlayerActivity : Activity() {
     private var titles = arrayListOf<String>()
     private var urls = arrayListOf<String>()
     private var startIndex = 0
-
     private var restoredPosition = 0L
     private var finishedPlayback = false
     private var isFullscreen = false
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val hideFullscreenControlsRunnable = Runnable {
+        if (isFullscreen && !isFinishing &&
+            ::playerView.isInitialized &&
+            player?.isPlaying == true
+        ) {
+            playerView.hideController()
+            fullscreenExitButton.visibility = View.GONE
+        }
+    }
 
     private val preferences by lazy {
         getSharedPreferences("vietstream_playback", MODE_PRIVATE)
@@ -58,10 +73,7 @@ class InAppPlayerActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        )
-
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableImmersiveMode()
 
         val singleTitle =
@@ -70,11 +82,11 @@ class InAppPlayerActivity : Activity() {
         val singleUrl =
             intent.getStringExtra("video_url").orEmpty()
 
-        titles = intent.getStringArrayListExtra("episode_titles")
-            ?: arrayListOf()
+        titles =
+            intent.getStringArrayListExtra("episode_titles") ?: arrayListOf()
 
-        urls = intent.getStringArrayListExtra("episode_urls")
-            ?: arrayListOf()
+        urls =
+            intent.getStringArrayListExtra("episode_urls") ?: arrayListOf()
 
         startIndex = intent.getIntExtra("episode_index", 0)
 
@@ -112,18 +124,18 @@ class InAppPlayerActivity : Activity() {
         restoreLastPosition()
         buildInterface()
         initializePlayer()
-        applySubtitleSize()
+        applySubtitleStyle()
     }
 
     private fun enableImmersiveMode() {
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             )
     }
 
@@ -152,7 +164,7 @@ class InAppPlayerActivity : Activity() {
     private fun buildInterface() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(android.graphics.Color.BLACK)
+            setBackgroundColor(Color.BLACK)
             isFocusable = true
         }
 
@@ -165,17 +177,19 @@ class InAppPlayerActivity : Activity() {
                 if (isTv) 12 else 4,
                 4
             )
-            setBackgroundColor(android.graphics.Color.rgb(20, 20, 20))
+            setBackgroundColor(Color.rgb(20, 20, 20))
         }
 
         val backButton = Button(this).apply {
             text = "‹ Quay lại"
             textSize = if (isTv) 17f else 12f
             isFocusable = true
+
             setOnClickListener {
                 saveProgress()
                 finish()
             }
+
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -183,15 +197,14 @@ class InAppPlayerActivity : Activity() {
         }
 
         titleView = TextView(this).apply {
-            text = titles.getOrElse(startIndex) {
-                "VIETSTREAM MAX"
-            }
+            text = titles.getOrElse(startIndex) { "VIETSTREAM MAX" }
             textSize = if (isTv) 22f else 15f
-            setTextColor(android.graphics.Color.WHITE)
+            setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
             setPadding(8, 12, 8, 12)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
+
             layoutParams = LinearLayout.LayoutParams(
                 0,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -203,9 +216,8 @@ class InAppPlayerActivity : Activity() {
             text = "Toàn màn hình"
             textSize = if (isTv) 15f else 10f
             isFocusable = true
-            setOnClickListener {
-                setFullscreen(true)
-            }
+            setOnClickListener { setFullscreen(true) }
+
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -219,19 +231,17 @@ class InAppPlayerActivity : Activity() {
         playerView = PlayerView(this).apply {
             useController = true
             controllerAutoShow = true
+            controllerShowTimeoutMs = 1000
             controllerHideOnTouch = !isTv
-
-            setShowBuffering(
-                PlayerView.SHOW_BUFFERING_WHEN_PLAYING
-            )
-
-            setBackgroundColor(android.graphics.Color.BLACK)
+            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+            setBackgroundColor(Color.BLACK)
             isFocusable = true
             isFocusableInTouchMode = true
         }
 
         val playerContainer = FrameLayout(this).apply {
-            setBackgroundColor(android.graphics.Color.BLACK)
+            setBackgroundColor(Color.BLACK)
+
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -252,6 +262,7 @@ class InAppPlayerActivity : Activity() {
             textSize = if (isTv) 15f else 11f
             visibility = View.GONE
             isFocusable = true
+
             setOnClickListener {
                 setFullscreen(false)
             }
@@ -277,14 +288,14 @@ class InAppPlayerActivity : Activity() {
                 if (isTv) 16 else 3,
                 if (isTv) 12 else 5
             )
-            setBackgroundColor(android.graphics.Color.rgb(15, 15, 15))
+            setBackgroundColor(Color.rgb(15, 15, 15))
         }
 
         val buttonLabels = listOf(
             "Tập trước",
             "Tốc độ",
             "Phụ đề",
-            "Cỡ chữ",
+            "Kiểu chữ",
             "Tập tiếp"
         )
 
@@ -292,14 +303,12 @@ class InAppPlayerActivity : Activity() {
             { previousEpisode() },
             { showSpeedOptions() },
             { showSubtitleOptions() },
-            { showSubtitleSizeOptions() },
+            { showSubtitleStyleOptions() },
             { nextEpisode() }
         )
 
         buttonLabels.forEachIndexed { index, label ->
-            controls.addView(
-                makeButton(label, actions[index])
-            )
+            controls.addView(makeButton(label, actions[index]))
         }
 
         root.addView(topBar)
@@ -307,30 +316,70 @@ class InAppPlayerActivity : Activity() {
         root.addView(controls)
 
         setContentView(root)
+
+        playerView.setControllerVisibilityListener(
+            PlayerView.ControllerVisibilityListener { visibility ->
+                if (!::fullscreenExitButton.isInitialized) {
+                    return@ControllerVisibilityListener
+                }
+
+                if (isFullscreen && visibility == View.VISIBLE) {
+                    fullscreenExitButton.visibility = View.VISIBLE
+                    scheduleFullscreenControlsHide()
+                } else {
+                    fullscreenExitButton.visibility = View.GONE
+                    mainHandler.removeCallbacks(
+                        hideFullscreenControlsRunnable
+                    )
+                }
+            }
+        )
+
         playerView.requestFocus()
     }
 
-    private fun setFullscreen(enabled: Boolean) {
-        isFullscreen = enabled
+    private fun scheduleFullscreenControlsHide() {
+        mainHandler.removeCallbacks(hideFullscreenControlsRunnable)
 
-        if (!::topBar.isInitialized || !::controls.isInitialized) {
+        if (isFullscreen && player?.isPlaying == true) {
+            mainHandler.postDelayed(
+                hideFullscreenControlsRunnable,
+                1000L
+            )
+        }
+    }
+
+    private fun setFullscreen(enabled: Boolean) {
+        if (isFullscreen == enabled) {
+            if (enabled) {
+                playerView.showController()
+                fullscreenExitButton.visibility = View.VISIBLE
+                scheduleFullscreenControlsHide()
+            }
             return
         }
+
+        isFullscreen = enabled
+
+        mainHandler.removeCallbacks(hideFullscreenControlsRunnable)
 
         topBar.visibility = if (enabled) View.GONE else View.VISIBLE
         controls.visibility = if (enabled) View.GONE else View.VISIBLE
 
-        if (::fullscreenExitButton.isInitialized) {
-            fullscreenExitButton.visibility =
-                if (enabled) View.VISIBLE else View.GONE
-        }
+        if (enabled) {
+            fullscreenExitButton.visibility = View.VISIBLE
+            playerView.showController()
+            scheduleFullscreenControlsHide()
+        } else {
+            fullscreenExitButton.visibility = View.GONE
+            playerView.hideController()
 
-        if (!enabled) {
             titleView.text = titles.getOrElse(
                 player?.currentMediaItemIndex ?: startIndex
             ) {
                 "VIETSTREAM MAX"
             }
+
             playerView.requestFocus()
         }
     }
@@ -382,44 +431,50 @@ class InAppPlayerActivity : Activity() {
             restoredPosition
         )
 
-        exoPlayer.addListener(
-            object : Player.Listener {
+        exoPlayer.addListener(object : Player.Listener {
 
-                override fun onMediaItemTransition(
-                    mediaItem: MediaItem?,
-                    reason: Int
-                ) {
-                    finishedPlayback = false
+            override fun onMediaItemTransition(
+                mediaItem: MediaItem?,
+                reason: Int
+            ) {
+                finishedPlayback = false
 
-                    val index = exoPlayer.currentMediaItemIndex
+                val index = exoPlayer.currentMediaItemIndex
 
-                    titleView.text = titles.getOrElse(index) {
-                        "Tập ${index + 1}"
-                    }
-
-                    saveProgress()
+                titleView.text = titles.getOrElse(index) {
+                    "Tập ${index + 1}"
                 }
 
-                override fun onPlayerError(
-                    error: PlaybackException
-                ) {
-                    Toast.makeText(
-                        this@InAppPlayerActivity,
-                        "Không phát được video: ${error.errorCodeName}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+                saveProgress()
+            }
 
-                override fun onPlaybackStateChanged(
-                    playbackState: Int
-                ) {
-                    if (playbackState == Player.STATE_ENDED) {
-                        finishedPlayback = true
-                        clearFinishedProgress()
-                    }
+            override fun onPlayerError(error: PlaybackException) {
+                Toast.makeText(
+                    this@InAppPlayerActivity,
+                    "Không phát được video: ${error.errorCodeName}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) {
+                    finishedPlayback = true
+                    clearFinishedProgress()
                 }
             }
-        )
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (!isPlaying && isFullscreen) {
+                    mainHandler.removeCallbacks(
+                        hideFullscreenControlsRunnable
+                    )
+                    playerView.showController()
+                    fullscreenExitButton.visibility = View.VISIBLE
+                } else if (isPlaying && isFullscreen) {
+                    scheduleFullscreenControlsHide()
+                }
+            }
+        })
 
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
@@ -468,12 +523,8 @@ class InAppPlayerActivity : Activity() {
         subtitleTracks.forEachIndexed { groupIndex, group ->
             for (trackIndex in 0 until group.length) {
                 val format = group.getTrackFormat(trackIndex)
-
-                val language = format.language
-                    ?: "Không rõ ngôn ngữ"
-
-                val label = format.label
-                    ?: "Phụ đề ${trackIndex + 1}"
+                val language = format.language ?: "Không rõ ngôn ngữ"
+                val label = format.label ?: "Phụ đề ${trackIndex + 1}"
 
                 options.add("$language - $label")
                 selections.add(groupIndex to trackIndex)
@@ -492,7 +543,6 @@ class InAppPlayerActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Chọn phụ đề")
             .setItems(options.toTypedArray()) { _, which ->
-
                 val builder = exoPlayer.trackSelectionParameters
                     .buildUpon()
                     .clearOverridesOfType(C.TRACK_TYPE_TEXT)
@@ -503,7 +553,9 @@ class InAppPlayerActivity : Activity() {
                         true
                     )
                 } else {
-                    val (groupIndex, trackIndex) = selections[which - 1]
+                    val (groupIndex, trackIndex) =
+                        selections[which - 1]
+
                     val group = subtitleTracks[groupIndex]
 
                     val override = TrackSelectionOverride(
@@ -525,36 +577,118 @@ class InAppPlayerActivity : Activity() {
             .show()
     }
 
+    private fun showSubtitleStyleOptions() {
+        val options = arrayOf(
+            "Cỡ chữ phụ đề",
+            "Màu chữ phụ đề"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Tùy chỉnh phụ đề")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showSubtitleSizeOptions()
+                    1 -> showSubtitleColorOptions()
+                }
+            }
+            .setNegativeButton("Đóng", null)
+            .show()
+    }
+
     private fun showSubtitleSizeOptions() {
-        val sizes = intArrayOf(14, 16, 18, 20, 24, 28, 32)
+        val sizes = intArrayOf(
+            14, 16, 18, 20, 24, 28, 32
+        )
+
         val labels = sizes.map { "$it sp" }.toTypedArray()
+
         val currentSize = settings.getInt("subtitle_size", 20)
         val selectedIndex = sizes.indexOf(currentSize).coerceAtLeast(0)
 
         AlertDialog.Builder(this)
             .setTitle("Cỡ chữ phụ đề")
-            .setSingleChoiceItems(labels, selectedIndex) { dialog, which ->
+            .setSingleChoiceItems(
+                labels,
+                selectedIndex
+            ) { dialog, which ->
                 settings.edit()
                     .putInt("subtitle_size", sizes[which])
                     .apply()
 
-                applySubtitleSize()
-
+                applySubtitleStyle()
                 dialog.dismiss()
             }
             .setNegativeButton("Đóng", null)
             .show()
     }
 
-    private fun applySubtitleSize() {
+    private fun showSubtitleColorOptions() {
+        val colors = intArrayOf(
+            Color.WHITE,
+            Color.YELLOW,
+            Color.GREEN,
+            Color.CYAN,
+            Color.RED,
+            Color.MAGENTA
+        )
+
+        val names = arrayOf(
+            "Trắng",
+            "Vàng",
+            "Xanh lá",
+            "Xanh dương nhạt",
+            "Đỏ",
+            "Hồng tím"
+        )
+
+        val currentColor = settings.getInt(
+            "subtitle_color",
+            Color.WHITE
+        )
+
+        val selectedIndex =
+            colors.indexOf(currentColor).coerceAtLeast(0)
+
+        AlertDialog.Builder(this)
+            .setTitle("Màu chữ phụ đề")
+            .setSingleChoiceItems(
+                names,
+                selectedIndex
+            ) { dialog, which ->
+                settings.edit()
+                    .putInt("subtitle_color", colors[which])
+                    .apply()
+
+                applySubtitleStyle()
+                dialog.dismiss()
+            }
+            .setNegativeButton("Đóng", null)
+            .show()
+    }
+
+    private fun applySubtitleStyle() {
         if (!::playerView.isInitialized) return
 
         val size = settings.getInt("subtitle_size", 20)
+        val color = settings.getInt("subtitle_color", Color.WHITE)
 
-        playerView.subtitleView?.setFixedTextSize(
-            TypedValue.COMPLEX_UNIT_SP,
-            size.toFloat()
-        )
+        playerView.subtitleView?.apply {
+            setFixedTextSize(
+                TypedValue.COMPLEX_UNIT_SP,
+                size.toFloat()
+            )
+
+            setStyle(
+                CaptionStyleCompat(
+                    color,
+                    Color.TRANSPARENT,
+                    Color.TRANSPARENT,
+                    CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                    Color.BLACK,
+                    null
+                )
+            )
+        }
     }
 
     private fun previousEpisode() {
@@ -604,9 +738,7 @@ class InAppPlayerActivity : Activity() {
         preferences.edit()
             .putString(
                 "last_title",
-                titles.getOrElse(index) {
-                    "VIETSTREAM MAX"
-                }
+                titles.getOrElse(index) { "VIETSTREAM MAX" }
             )
             .putString("last_url", urls[index])
             .putInt("last_index", index)
@@ -638,6 +770,7 @@ class InAppPlayerActivity : Activity() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         saveProgress()
 
         if (::playerView.isInitialized) {
