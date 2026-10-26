@@ -1,15 +1,17 @@
+
 package com.vietstream.max
 
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.Gravity
-import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -29,6 +31,9 @@ class InAppPlayerActivity : Activity() {
 
     private lateinit var playerView: PlayerView
     private lateinit var titleView: TextView
+    private lateinit var topBar: LinearLayout
+    private lateinit var controls: LinearLayout
+    private lateinit var fullscreenExitButton: Button
 
     private var titles = arrayListOf<String>()
     private var urls = arrayListOf<String>()
@@ -36,9 +41,14 @@ class InAppPlayerActivity : Activity() {
 
     private var restoredPosition = 0L
     private var finishedPlayback = false
+    private var isFullscreen = false
 
     private val preferences by lazy {
         getSharedPreferences("vietstream_playback", MODE_PRIVATE)
+    }
+
+    private val settings by lazy {
+        getSharedPreferences("vietstream_settings", MODE_PRIVATE)
     }
 
     private val isTv: Boolean
@@ -103,6 +113,7 @@ class InAppPlayerActivity : Activity() {
         restoreLastPosition()
         buildInterface()
         initializePlayer()
+        applySubtitleSize()
     }
 
     private fun enableImmersiveMode() {
@@ -146,22 +157,65 @@ class InAppPlayerActivity : Activity() {
             isFocusable = true
         }
 
+        topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(
+                if (isTv) 12 else 4,
+                4,
+                if (isTv) 12 else 4,
+                4
+            )
+            setBackgroundColor(android.graphics.Color.rgb(20, 20, 20))
+        }
+
+        val backButton = Button(this).apply {
+            text = "‹ Quay lại"
+            textSize = if (isTv) 17f else 12f
+            isFocusable = true
+            setOnClickListener {
+                saveProgress()
+                finish()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+
         titleView = TextView(this).apply {
             text = titles.getOrElse(startIndex) {
                 "VIETSTREAM MAX"
             }
-
-            textSize = if (isTv) 22f else 16f
+            textSize = if (isTv) 22f else 15f
             setTextColor(android.graphics.Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(
-                if (isTv) 28 else 16,
-                if (isTv) 18 else 12,
-                if (isTv) 28 else 16,
-                if (isTv) 18 else 12
-            )
+            setPadding(8, 12, 8, 12)
             maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            )
         }
+
+        val fullscreenButton = Button(this).apply {
+            text = "Toàn màn hình"
+            textSize = if (isTv) 15f else 10f
+            isFocusable = true
+            setOnClickListener {
+                setFullscreen(true)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        topBar.addView(backButton)
+        topBar.addView(titleView)
+        topBar.addView(fullscreenButton)
 
         playerView = PlayerView(this).apply {
             useController = true
@@ -173,35 +227,65 @@ class InAppPlayerActivity : Activity() {
             )
 
             setBackgroundColor(android.graphics.Color.BLACK)
+            isFocusable = true
+            isFocusableInTouchMode = true
+        }
 
+        val playerContainer = FrameLayout(this).apply {
+            setBackgroundColor(android.graphics.Color.BLACK)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1f
             )
-
-            isFocusable = true
-            isFocusableInTouchMode = true
         }
 
-        val controls = LinearLayout(this).apply {
+        playerContainer.addView(
+            playerView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+
+        fullscreenExitButton = Button(this).apply {
+            text = "✕ Thoát toàn màn hình"
+            textSize = if (isTv) 15f else 11f
+            visibility = View.GONE
+            isFocusable = true
+            setOnClickListener {
+                setFullscreen(false)
+            }
+
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.END
+            ).apply {
+                topMargin = if (isTv) 16 else 8
+                marginEnd = if (isTv) 16 else 8
+            }
+        }
+
+        playerContainer.addView(fullscreenExitButton)
+
+        controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(
-                if (isTv) 20 else 6,
-                if (isTv) 14 else 8,
-                if (isTv) 20 else 6,
-                if (isTv) 14 else 8
+                if (isTv) 16 else 3,
+                if (isTv) 12 else 5,
+                if (isTv) 16 else 3,
+                if (isTv) 12 else 5
             )
-            setBackgroundColor(
-                android.graphics.Color.rgb(15, 15, 15)
-            )
+            setBackgroundColor(android.graphics.Color.rgb(15, 15, 15))
         }
 
         val buttonLabels = listOf(
             "Tập trước",
             "Tốc độ",
             "Phụ đề",
+            "Cỡ chữ",
             "Tập tiếp"
         )
 
@@ -209,6 +293,7 @@ class InAppPlayerActivity : Activity() {
             { previousEpisode() },
             { showSpeedOptions() },
             { showSubtitleOptions() },
+            { showSubtitleSizeOptions() },
             { nextEpisode() }
         )
 
@@ -218,13 +303,37 @@ class InAppPlayerActivity : Activity() {
             )
         }
 
-        root.addView(titleView)
-        root.addView(playerView)
+        root.addView(topBar)
+        root.addView(playerContainer)
         root.addView(controls)
 
         setContentView(root)
-
         playerView.requestFocus()
+    }
+
+    private fun setFullscreen(enabled: Boolean) {
+        isFullscreen = enabled
+
+        if (!::topBar.isInitialized || !::controls.isInitialized) {
+            return
+        }
+
+        topBar.visibility = if (enabled) View.GONE else View.VISIBLE
+        controls.visibility = if (enabled) View.GONE else View.VISIBLE
+
+        if (::fullscreenExitButton.isInitialized) {
+            fullscreenExitButton.visibility =
+                if (enabled) View.VISIBLE else View.GONE
+        }
+
+        if (!enabled) {
+            titleView.text = titles.getOrElse(
+                player?.currentMediaItemIndex ?: startIndex
+            ) {
+                "VIETSTREAM MAX"
+            }
+            playerView.requestFocus()
+        }
     }
 
     private fun makeButton(
@@ -233,11 +342,12 @@ class InAppPlayerActivity : Activity() {
     ): Button {
         return Button(this).apply {
             text = label
-            textSize = if (isTv) 16f else 11f
+            textSize = if (isTv) 15f else 9f
             isFocusable = true
             isFocusableInTouchMode = true
-            minHeight = if (isTv) 64 else 48
+            minHeight = if (isTv) 64 else 44
             minWidth = 0
+            setPadding(2, 0, 2, 0)
 
             setOnClickListener {
                 action()
@@ -248,8 +358,8 @@ class InAppPlayerActivity : Activity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 1f
             ).apply {
-                marginStart = if (isTv) 8 else 2
-                marginEnd = if (isTv) 8 else 2
+                marginStart = if (isTv) 6 else 1
+                marginEnd = if (isTv) 6 else 1
             }
         }
     }
@@ -416,6 +526,38 @@ class InAppPlayerActivity : Activity() {
             .show()
     }
 
+    private fun showSubtitleSizeOptions() {
+        val sizes = intArrayOf(14, 16, 18, 20, 24, 28, 32)
+        val labels = sizes.map { "$it sp" }.toTypedArray()
+        val currentSize = settings.getInt("subtitle_size", 20)
+        val selectedIndex = sizes.indexOf(currentSize).coerceAtLeast(0)
+
+        AlertDialog.Builder(this)
+            .setTitle("Cỡ chữ phụ đề")
+            .setSingleChoiceItems(labels, selectedIndex) { dialog, which ->
+                settings.edit()
+                    .putInt("subtitle_size", sizes[which])
+                    .apply()
+
+                applySubtitleSize()
+
+                dialog.dismiss()
+            }
+            .setNegativeButton("Đóng", null)
+            .show()
+    }
+
+    private fun applySubtitleSize() {
+        if (!::playerView.isInitialized) return
+
+        val size = settings.getInt("subtitle_size", 20)
+
+        playerView.subtitleView?.setFixedTextSize(
+            TypedValue.COMPLEX_UNIT_SP,
+            size.toFloat()
+        )
+    }
+
     private fun previousEpisode() {
         val exoPlayer = player ?: return
 
@@ -515,6 +657,11 @@ class InAppPlayerActivity : Activity() {
 
     @Deprecated("Deprecated in Android API")
     override fun onBackPressed() {
+        if (isFullscreen) {
+            setFullscreen(false)
+            return
+        }
+
         saveProgress()
         super.onBackPressed()
     }
