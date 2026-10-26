@@ -14,6 +14,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
@@ -108,9 +109,7 @@ private val gson = Gson()
 
 private fun jsonText(obj: JsonObject, key: String): String {
     return try {
-        obj.get(key)
-            ?.takeIf { !it.isJsonNull }
-            ?.asString ?: ""
+        obj.get(key)?.takeIf { !it.isJsonNull }?.asString ?: ""
     } catch (_: Exception) {
         ""
     }
@@ -120,8 +119,7 @@ private fun jsonNames(obj: JsonObject, key: String): List<String> {
     return try {
         val array = obj.get(key)
             ?.takeIf { it.isJsonArray }
-            ?.asJsonArray
-            ?: return emptyList()
+            ?.asJsonArray ?: return emptyList()
 
         array.mapNotNull { element ->
             try {
@@ -172,10 +170,8 @@ fun parseMovies(root: JsonObject): List<Movie> {
     val items = when {
         root.get("items")?.isJsonArray == true ->
             root.getAsJsonArray("items")
-
         data?.get("items")?.isJsonArray == true ->
             data.getAsJsonArray("items")
-
         else -> null
     } ?: return emptyList()
 
@@ -191,8 +187,7 @@ fun parseMovies(root: JsonObject): List<Movie> {
             val item = element.asJsonObject
             val name = jsonText(item, "name")
             val slug = jsonText(item, "slug")
-
-            val rawPoster = jsonText(item, "poster_url")
+            val poster = jsonText(item, "poster_url")
                 .ifBlank { jsonText(item, "thumb_url") }
 
             if (name.isBlank() || slug.isBlank()) {
@@ -201,7 +196,7 @@ fun parseMovies(root: JsonObject): List<Movie> {
                 Movie(
                     name = name,
                     slug = slug,
-                    poster = resolvePoster(rawPoster, imageRoot),
+                    poster = resolvePoster(poster, imageRoot),
                     year = jsonText(item, "year"),
                     origin = jsonText(item, "origin_name"),
                     description = jsonText(item, "content"),
@@ -227,13 +222,11 @@ fun parseEpisodeServers(root: JsonObject): List<EpisodeServer> {
             val server = element.asJsonObject
             val serverName = jsonText(server, "server_name")
                 .ifBlank { "Máy chủ" }
-
             val serverData = server.getAsJsonArray("server_data")
 
             val parsed = serverData.mapNotNull { episodeElement ->
                 try {
                     val episode = episodeElement.asJsonObject
-
                     EpisodeSource(
                         name = jsonText(episode, "name"),
                         slug = jsonText(episode, "slug"),
@@ -259,10 +252,7 @@ private const val PREFS_NAME = "vietstream_library"
 private const val FAVORITES_KEY = "favorites_movies"
 private const val HISTORY_KEY = "history_movies"
 
-private fun readMovieList(
-    context: Context,
-    key: String
-): List<Movie> {
+private fun readMovieList(context: Context, key: String): List<Movie> {
     return try {
         val json = context.getSharedPreferences(
             PREFS_NAME,
@@ -270,7 +260,6 @@ private fun readMovieList(
         ).getString(key, null) ?: return emptyList()
 
         val type = object : TypeToken<List<Movie>>() {}.type
-
         gson.fromJson<List<Movie>>(json, type) ?: emptyList()
     } catch (_: Exception) {
         emptyList()
@@ -282,229 +271,10 @@ private fun saveMovieList(
     key: String,
     movies: List<Movie>
 ) {
-    context.getSharedPreferences(
-        PREFS_NAME,
-        Context.MODE_PRIVATE
-    ).edit()
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
         .putString(key, gson.toJson(movies))
         .apply()
-}
-
-// LIVE TV
-
-data class TvChannel(
-    val name: String,
-    val country: String,
-    val category: String,
-    val description: String,
-    val url: String
-)
-
-private val officialChannels = listOf(
-    TvChannel(
-        "VTV1", "Việt Nam", "Tin tức",
-        "Kênh thời sự và chính luận của VTV",
-        "https://vtv.vn/truyen-hinh-truc-tuyen/vtv1.htm"
-    ),
-    TvChannel(
-        "VTVgo", "Việt Nam", "Tổng hợp",
-        "Nền tảng truyền hình trực tuyến của VTV",
-        "https://vtvgo.vn/"
-    ),
-    TvChannel(
-        "VTV4", "Việt Nam", "Quốc tế",
-        "Kênh truyền hình đối ngoại Việt Nam",
-        "https://vtv4.vtv.vn/xem-vtv4-moi-luc-moi-noi.html"
-    ),
-    TvChannel(
-        "Vietnam Today", "Việt Nam", "Tin tức",
-        "Kênh đối ngoại quốc gia",
-        "https://vietnamtoday.vtv.vn/"
-    ),
-    TvChannel(
-        "Al Jazeera English", "Quốc tế", "Tin tức",
-        "Tin tức quốc tế",
-        "https://www.aljazeera.com/video/live"
-    ),
-    TvChannel(
-        "TRT World", "Quốc tế", "Tin tức",
-        "Tin tức thế giới",
-        "https://www.trtworld.com/live"
-    ),
-    TvChannel(
-        "France 24", "Quốc tế", "Tin tức",
-        "Kênh tin tức quốc tế của Pháp",
-        "https://www.france24.com/en/live"
-    ),
-    TvChannel(
-        "DW News", "Quốc tế", "Tin tức",
-        "Kênh tin tức quốc tế của Đức",
-        "https://www.dw.com/en/live-tv/s-100825"
-    ),
-    TvChannel(
-        "NHK World-Japan", "Quốc tế", "Tin tức",
-        "Truyền hình quốc tế Nhật Bản",
-        "https://www3.nhk.or.jp/nhkworld/en/live/"
-    )
-)
-
-@Composable
-fun LiveTvScreen(
-    modifier: Modifier = Modifier,
-    isTv: Boolean = false
-) {
-    val context = LocalContext.current
-
-    var region by remember { mutableStateOf("Tất cả") }
-    var search by remember { mutableStateOf("") }
-
-    val regions = listOf("Tất cả", "Việt Nam", "Quốc tế")
-
-    val filtered = officialChannels.filter {
-        (region == "Tất cả" || it.country == region) &&
-            (
-                it.name.contains(search, true) ||
-                    it.category.contains(search, true)
-                )
-    }
-
-    Column(
-        modifier
-            .fillMaxWidth()
-            .background(Black)
-            .padding(horizontal = if (isTv) 28.dp else 16.dp)
-    ) {
-        Text(
-            "TRUYỀN HÌNH TRỰC TUYẾN",
-            color = Red,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
-        )
-
-        Text(
-            "Live TV",
-            color = White,
-            fontSize = if (isTv) 34.sp else 27.sp,
-            fontWeight = FontWeight.Black
-        )
-
-        OutlinedTextField(
-            value = search,
-            onValueChange = { search = it },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            placeholder = { Text("Tìm tên kênh...") }
-        )
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(vertical = 8.dp)
-        ) {
-            regions.forEach {
-                FilterChip(
-                    selected = region == it,
-                    onClick = { region = it },
-                    label = { Text(it) }
-                )
-            }
-        }
-
-        Column(
-            Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            filtered.forEach { channel ->
-                TvChannelCard(channel, isTv) {
-                    context.startActivity(
-                        Intent(
-                            context,
-                            InAppWebActivity::class.java
-                        ).apply {
-                            putExtra("web_title", channel.name)
-                            putExtra("web_url", channel.url)
-                        }
-                    )
-                }
-            }
-
-            if (filtered.isEmpty()) {
-                Text(
-                    "Không tìm thấy kênh phù hợp.",
-                    color = Gray,
-                    modifier = Modifier.padding(20.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TvChannelCard(
-    channel: TvChannel,
-    isTv: Boolean,
-    onClick: () -> Unit
-) {
-    var focused by remember { mutableStateOf(false) }
-
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Panel)
-            .border(
-                if (focused) 2.dp else 1.dp,
-                if (focused) FocusColor else Color.Transparent,
-                RoundedCornerShape(12.dp)
-            )
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
-            .focusable()
-            .padding(if (isTv) 20.dp else 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            Modifier
-                .size(if (isTv) 62.dp else 48.dp)
-                .background(
-                    Color(0xFF303030),
-                    RoundedCornerShape(10.dp)
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                channel.name.take(3).uppercase(),
-                color = Red,
-                fontWeight = FontWeight.Black
-            )
-        }
-
-        Spacer(Modifier.width(12.dp))
-
-        Column(Modifier.weight(1f)) {
-            Text(
-                channel.name,
-                color = White,
-                fontWeight = FontWeight.Bold,
-                fontSize = if (isTv) 18.sp else 14.sp
-            )
-
-            Text(
-                "${channel.country} • ${channel.category}",
-                color = Red,
-                fontSize = 11.sp
-            )
-
-            Text(
-                channel.description,
-                color = Gray,
-                fontSize = 11.sp
-            )
-        }
-
-        Text("▶", color = Red)
-    }
 }
 
 // POSTER
@@ -535,7 +305,6 @@ fun MoviePoster(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text("▶", color = Red, fontSize = 30.sp)
-
                 Text(
                     name,
                     color = Gray,
@@ -569,10 +338,7 @@ private fun MovieFilterRow(
             color = Gray,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(
-                start = 12.dp,
-                bottom = 4.dp
-            )
+            modifier = Modifier.padding(start = 12.dp, bottom = 4.dp)
         )
 
         Row(
@@ -611,7 +377,7 @@ private fun MovieFilters(
     onReset: () -> Unit
 ) {
     val countries = listOf("Tất cả") +
-        movies.flatMap { it.countries.orEmpty() }
+        movies.flatMap { it.countries }
             .distinct()
             .sorted()
 
@@ -622,14 +388,14 @@ private fun MovieFilters(
             .sortedDescending()
 
     val genres = listOf("Tất cả") +
-        movies.flatMap { it.genres.orEmpty() }
+        movies.flatMap { it.genres }
             .distinct()
             .sorted()
 
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(bottom = 6.dp)
+            .padding(bottom = 8.dp)
     ) {
         Row(
             Modifier
@@ -647,11 +413,7 @@ private fun MovieFilters(
             Spacer(Modifier.weight(1f))
 
             TextButton(onClick = onReset) {
-                Text(
-                    "Xóa bộ lọc",
-                    color = White,
-                    fontSize = 11.sp
-                )
+                Text("Xóa bộ lọc", color = White, fontSize = 11.sp)
             }
         }
 
@@ -727,7 +489,6 @@ fun VietStreamApp(isTv: Boolean = false) {
         mutableStateOf(readMovieList(context, HISTORY_KEY))
     }
 
-    // Trạng thái bộ lọc
     var filterCountry by remember { mutableStateOf("Tất cả") }
     var filterYear by remember { mutableStateOf("Tất cả") }
     var filterGenre by remember { mutableStateOf("Tất cả") }
@@ -751,9 +512,8 @@ fun VietStreamApp(isTv: Boolean = false) {
 
     fun addToHistory(movie: Movie) {
         val updated = (
-            listOf(movie) +
-                history.filter { it.slug != movie.slug }
-            ).take(100)
+            listOf(movie) + history.filter { it.slug != movie.slug }
+        ).take(100)
 
         history = updated
         saveMovieList(context, HISTORY_KEY, updated)
@@ -767,36 +527,24 @@ fun VietStreamApp(isTv: Boolean = false) {
             movies = when (section) {
                 "Phim lẻ" ->
                     parseMovies(MovieService.api.list("phim-le"))
-
                 "Phim bộ" ->
                     parseMovies(MovieService.api.list("phim-bo"))
-
                 "Hoạt hình" ->
                     parseMovies(MovieService.api.list("hoat-hinh"))
-
                 "Yêu thích" -> favorites
-
                 "Lịch sử" -> history
-
                 else -> parseMovies(MovieService.api.home())
             }
 
             if (movies.isEmpty()) {
                 error = when (section) {
-                    "Yêu thích" ->
-                        "Bạn chưa thêm phim yêu thích."
-
-                    "Lịch sử" ->
-                        "Bạn chưa xem phim nào."
-
-                    else ->
-                        "Chưa có dữ liệu cho danh mục này."
+                    "Yêu thích" -> "Bạn chưa thêm phim yêu thích."
+                    "Lịch sử" -> "Bạn chưa xem phim nào."
+                    else -> "Chưa có dữ liệu cho danh mục này."
                 }
             }
         } catch (e: Exception) {
-            error = "Không thể tải phim: ${
-                e.message ?: "Lỗi kết nối"
-            }"
+            error = "Không thể tải phim: ${e.message ?: "Lỗi kết nối"}"
         } finally {
             loading = false
         }
@@ -805,11 +553,7 @@ fun VietStreamApp(isTv: Boolean = false) {
     LaunchedEffect(tab) {
         resetFilters()
 
-        if (
-            tab != "Live TV" &&
-            tab != "Tìm kiếm" &&
-            tab != "Cài đặt"
-        ) {
+        if (tab != "Tìm kiếm" && tab != "Cài đặt") {
             loadMovies(tab)
         }
     }
@@ -820,18 +564,14 @@ fun VietStreamApp(isTv: Boolean = false) {
                 movies = favorites
                 error = if (favorites.isEmpty()) {
                     "Bạn chưa thêm phim yêu thích."
-                } else {
-                    ""
-                }
+                } else ""
             }
 
             "Lịch sử" -> {
                 movies = history
                 error = if (history.isEmpty()) {
                     "Bạn chưa xem phim nào."
-                } else {
-                    ""
-                }
+                } else ""
             }
         }
     }
@@ -851,23 +591,19 @@ fun VietStreamApp(isTv: Boolean = false) {
                 null
             }
 
-            detailText = info?.let {
-                jsonText(it, "content")
-            }.orEmpty()
+            detailText = info?.let { jsonText(it, "content") }
+                .orEmpty()
                 .replace(Regex("<[^>]*>"), " ")
                 .replace("&nbsp;", " ")
                 .trim()
                 .ifBlank {
-                    movie.description.ifBlank {
-                        "Chưa có giới thiệu."
-                    }
+                    movie.description.ifBlank { "Chưa có giới thiệu." }
                 }
 
             episodeServers = parseEpisodeServers(response)
 
             if (episodeServers.isEmpty()) {
-                detailText +=
-                    "\n\nChưa có máy chủ hoặc tập phim khả dụng."
+                detailText += "\n\nChưa có máy chủ hoặc tập phim khả dụng."
             }
         } catch (e: Exception) {
             detailText = "Không tải được chi tiết phim: ${
@@ -876,12 +612,12 @@ fun VietStreamApp(isTv: Boolean = false) {
         }
     }
 
+    // ĐÃ BỎ LIVE TV KHỎI DANH SÁCH ĐIỀU HƯỚNG
     val tabs = listOf(
         "Trang chủ",
         "Phim lẻ",
         "Phim bộ",
         "Hoạt hình",
-        "Live TV",
         "Cài đặt"
     )
 
@@ -901,7 +637,6 @@ fun VietStreamApp(isTv: Boolean = false) {
                                         "Phim lẻ" -> "▶"
                                         "Phim bộ" -> "▣"
                                         "Hoạt hình" -> "★"
-                                        "Live TV" -> "TV"
                                         "Cài đặt" -> "⚙"
                                         else -> "•"
                                     },
@@ -909,11 +644,7 @@ fun VietStreamApp(isTv: Boolean = false) {
                                 )
                             },
                             label = {
-                                Text(
-                                    item,
-                                    fontSize = 9.sp,
-                                    maxLines = 1
-                                )
+                                Text(item, fontSize = 9.sp, maxLines = 1)
                             },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedTextColor = White,
@@ -950,28 +681,24 @@ fun VietStreamApp(isTv: Boolean = false) {
                     )
 
                     tabs.forEach { item ->
-                        TvNavigationItem(
-                            item,
-                            tab == item
-                        ) { tab = item }
+                        TvNavigationItem(item, tab == item) {
+                            tab = item
+                        }
                     }
 
                     Spacer(Modifier.height(12.dp))
 
-                    TvNavigationItem(
-                        "Tìm kiếm",
-                        tab == "Tìm kiếm"
-                    ) { tab = "Tìm kiếm" }
+                    TvNavigationItem("Tìm kiếm", tab == "Tìm kiếm") {
+                        tab = "Tìm kiếm"
+                    }
 
-                    TvNavigationItem(
-                        "Yêu thích",
-                        tab == "Yêu thích"
-                    ) { tab = "Yêu thích" }
+                    TvNavigationItem("Yêu thích", tab == "Yêu thích") {
+                        tab = "Yêu thích"
+                    }
 
-                    TvNavigationItem(
-                        "Lịch sử",
-                        tab == "Lịch sử"
-                    ) { tab = "Lịch sử" }
+                    TvNavigationItem("Lịch sử", tab == "Lịch sử") {
+                        tab = "Lịch sử"
+                    }
                 }
             }
 
@@ -1007,7 +734,6 @@ fun VietStreamApp(isTv: Boolean = false) {
                                 fontSize = 19.sp,
                                 fontWeight = FontWeight.Black
                             )
-
                             Text(
                                 "STREAM",
                                 color = White,
@@ -1028,30 +754,19 @@ fun VietStreamApp(isTv: Boolean = false) {
                     Spacer(Modifier.weight(1f))
 
                     if (!isTv) {
-                        TextButton(onClick = {
-                            tab = "Tìm kiếm"
-                        }) {
+                        TextButton(onClick = { tab = "Tìm kiếm" }) {
                             Text("⌕ Tìm kiếm", color = White)
                         }
                     }
                 }
 
                 when (tab) {
-                    "Live TV" -> {
-                        LiveTvScreen(
-                            Modifier.weight(1f),
-                            isTv
-                        )
-                    }
-
                     "Cài đặt" -> {
                         SettingsScreen(
                             isTv = isTv,
                             favoriteCount = favorites.size,
                             historyCount = history.size,
-                            onNavigate = { destination ->
-                                tab = destination
-                            },
+                            onNavigate = { tab = it },
                             onClearFavorites = {
                                 favorites = emptyList()
                                 saveMovieList(
@@ -1072,7 +787,6 @@ fun VietStreamApp(isTv: Boolean = false) {
                     }
 
                     else -> {
-                        // TÌM KIẾM
                         if (tab == "Tìm kiếm") {
                             OutlinedTextField(
                                 value = keyword,
@@ -1098,10 +812,9 @@ fun VietStreamApp(isTv: Boolean = false) {
                                                         )
                                                     )
 
-                                                    if (movies.isEmpty()) {
-                                                        error =
-                                                            "Không tìm thấy phim."
-                                                    }
+                                                    error = if (movies.isEmpty()) {
+                                                        "Không tìm thấy phim."
+                                                    } else ""
                                                 } catch (e: Exception) {
                                                     error =
                                                         "Tìm kiếm thất bại: ${
@@ -1119,10 +832,7 @@ fun VietStreamApp(isTv: Boolean = false) {
                             )
                         }
 
-                        if (
-                            tab == "Yêu thích" ||
-                            tab == "Lịch sử"
-                        ) {
+                        if (tab == "Yêu thích" || tab == "Lịch sử") {
                             Text(
                                 tab,
                                 color = White,
@@ -1139,9 +849,7 @@ fun VietStreamApp(isTv: Boolean = false) {
                             Box(
                                 Modifier
                                     .fillMaxWidth()
-                                    .height(
-                                        if (isTv) 300.dp else 225.dp
-                                    )
+                                    .height(if (isTv) 300.dp else 225.dp)
                                     .padding(horizontal = 12.dp)
                                     .clip(RoundedCornerShape(16.dp))
                                     .clickable { selected = hero }
@@ -1159,9 +867,7 @@ fun VietStreamApp(isTv: Boolean = false) {
                                             Brush.verticalGradient(
                                                 listOf(
                                                     Color.Transparent,
-                                                    Color.Black.copy(
-                                                        alpha = 0.95f
-                                                    )
+                                                    Color.Black.copy(alpha = 0.95f)
                                                 )
                                             )
                                         )
@@ -1239,15 +945,12 @@ fun VietStreamApp(isTv: Boolean = false) {
                             }
                         }
 
-                        // ÁP DỤNG BỘ LỌC
+                        // LỌC PHIM
                         val visibleMovies = movies.filter { movie ->
                             val matchesCountry =
                                 filterCountry == "Tất cả" ||
-                                    movie.countries.orEmpty().any {
-                                        it.equals(
-                                            filterCountry,
-                                            ignoreCase = true
-                                        )
+                                    movie.countries.any {
+                                        it.equals(filterCountry, true)
                                     }
 
                             val matchesYear =
@@ -1256,34 +959,11 @@ fun VietStreamApp(isTv: Boolean = false) {
 
                             val matchesGenre =
                                 filterGenre == "Tất cả" ||
-                                    movie.genres.orEmpty().any {
-                                        it.equals(
-                                            filterGenre,
-                                            ignoreCase = true
-                                        )
+                                    movie.genres.any {
+                                        it.equals(filterGenre, true)
                                     }
 
-                            matchesCountry &&
-                                matchesYear &&
-                                matchesGenre
-                        }
-
-                        // HIỂN THỊ BỘ LỌC
-                        if (
-                            movies.isNotEmpty() &&
-                            tab != "Live TV" &&
-                            tab != "Cài đặt"
-                        ) {
-                            MovieFilters(
-                                movies = movies,
-                                country = filterCountry,
-                                year = filterYear,
-                                genre = filterGenre,
-                                onCountry = { filterCountry = it },
-                                onYear = { filterYear = it },
-                                onGenre = { filterGenre = it },
-                                onReset = { resetFilters() }
-                            )
+                            matchesCountry && matchesYear && matchesGenre
                         }
 
                         // DANH SÁCH PHIM
@@ -1318,10 +998,7 @@ fun VietStreamApp(isTv: Boolean = false) {
                                         .fillMaxWidth(),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text(
-                                        "Chưa có dữ liệu phim.",
-                                        color = Gray
-                                    )
+                                    Text("Chưa có dữ liệu phim.", color = Gray)
                                 }
                             }
 
@@ -1341,13 +1018,12 @@ fun VietStreamApp(isTv: Boolean = false) {
                             }
 
                             else -> {
+                                // QUAN TRỌNG:
+                                // Bộ lọc và poster nằm trong CÙNG LazyVerticalGrid.
+                                // Khi vuốt danh sách phim, bộ lọc cũng cuộn lên.
                                 LazyVerticalGrid(
                                     columns = GridCells.Adaptive(
-                                        minSize = if (isTv) {
-                                            190.dp
-                                        } else {
-                                            145.dp
-                                        }
+                                        minSize = if (isTv) 190.dp else 145.dp
                                     ),
                                     modifier = Modifier
                                         .weight(1f)
@@ -1355,15 +1031,45 @@ fun VietStreamApp(isTv: Boolean = false) {
                                     contentPadding = PaddingValues(
                                         if (isTv) 22.dp else 12.dp
                                     ),
-                                    horizontalArrangement =
-                                        Arrangement.spacedBy(
-                                            if (isTv) 18.dp else 12.dp
-                                        ),
-                                    verticalArrangement =
-                                        Arrangement.spacedBy(
-                                            if (isTv) 22.dp else 16.dp
-                                        )
+                                    horizontalArrangement = Arrangement.spacedBy(
+                                        if (isTv) 18.dp else 12.dp
+                                    ),
+                                    verticalArrangement = Arrangement.spacedBy(
+                                        if (isTv) 22.dp else 16.dp
+                                    )
                                 ) {
+                                    // BỘ LỌC LÀ MỘT PHẦN CỦA VÙNG CUỘN
+                                    if (
+                                        movies.isNotEmpty() &&
+                                        tab != "Cài đặt"
+                                    ) {
+                                        item(
+                                            span = {
+                                                GridItemSpan(maxLineSpan)
+                                            },
+                                            key = "movie_filters"
+                                        ) {
+                                            MovieFilters(
+                                                movies = movies,
+                                                country = filterCountry,
+                                                year = filterYear,
+                                                genre = filterGenre,
+                                                onCountry = {
+                                                    filterCountry = it
+                                                },
+                                                onYear = {
+                                                    filterYear = it
+                                                },
+                                                onGenre = {
+                                                    filterGenre = it
+                                                },
+                                                onReset = {
+                                                    resetFilters()
+                                                }
+                                            )
+                                        }
+                                    }
+
                                     gridItems(
                                         items = visibleMovies,
                                         key = { it.slug }
@@ -1387,18 +1093,17 @@ fun VietStreamApp(isTv: Boolean = false) {
                                 Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 12.dp),
-                                horizontalArrangement =
-                                    Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                TextButton(
-                                    onClick = { tab = "Yêu thích" }
-                                ) {
+                                TextButton(onClick = {
+                                    tab = "Yêu thích"
+                                }) {
                                     Text("♥ Yêu thích", color = Red)
                                 }
 
-                                TextButton(
-                                    onClick = { tab = "Lịch sử" }
-                                ) {
+                                TextButton(onClick = {
+                                    tab = "Lịch sử"
+                                }) {
                                     Text("◷ Lịch sử", color = White)
                                 }
                             }
@@ -1424,9 +1129,7 @@ fun VietStreamApp(isTv: Boolean = false) {
             text = {
                 Column(
                     Modifier
-                        .heightIn(
-                            max = if (isTv) 650.dp else 520.dp
-                        )
+                        .heightIn(max = if (isTv) 650.dp else 520.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
                     MoviePoster(
@@ -1444,25 +1147,15 @@ fun VietStreamApp(isTv: Boolean = false) {
                         modifier = Modifier.padding(vertical = 8.dp)
                     )
 
-                    Text(
-                        detailText,
-                        color = White,
-                        fontSize = 13.sp
-                    )
+                    Text(detailText, color = White, fontSize = 13.sp)
 
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        TextButton(
-                            onClick = { toggleFavorite(movie) }
-                        ) {
+                        TextButton(onClick = { toggleFavorite(movie) }) {
                             Text(
-                                if (
-                                    favorites.any {
-                                        it.slug == movie.slug
-                                    }
-                                ) {
+                                if (favorites.any { it.slug == movie.slug }) {
                                     "♥ Đã yêu thích"
                                 } else {
                                     "♡ Yêu thích"
@@ -1482,9 +1175,7 @@ fun VietStreamApp(isTv: Boolean = false) {
 
                     Spacer(Modifier.height(14.dp))
 
-                    HorizontalDivider(
-                        color = Gray.copy(alpha = 0.3f)
-                    )
+                    HorizontalDivider(color = Gray.copy(alpha = 0.3f))
 
                     Text(
                         "CHỌN MÁY CHỦ VÀ TẬP",
@@ -1517,31 +1208,16 @@ fun VietStreamApp(isTv: Boolean = false) {
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(Color(0xFF292929))
                                     .clickable {
-                                        val videoUrl =
-                                            episode.m3u8.trim()
-
-                                        val embedUrl =
-                                            episode.embed.trim()
+                                        val videoUrl = episode.m3u8.trim()
+                                        val embedUrl = episode.embed.trim()
 
                                         val validM3u8 =
-                                            videoUrl.startsWith(
-                                                "https://",
-                                                true
-                                            ) ||
-                                                videoUrl.startsWith(
-                                                    "http://",
-                                                    true
-                                                )
+                                            videoUrl.startsWith("https://", true) ||
+                                                videoUrl.startsWith("http://", true)
 
                                         val validEmbed =
-                                            embedUrl.startsWith(
-                                                "https://",
-                                                true
-                                            ) ||
-                                                embedUrl.startsWith(
-                                                    "http://",
-                                                    true
-                                                )
+                                            embedUrl.startsWith("https://", true) ||
+                                                embedUrl.startsWith("http://", true)
 
                                         when {
                                             validM3u8 -> {
@@ -1550,11 +1226,10 @@ fun VietStreamApp(isTv: Boolean = false) {
                                                         it.m3u8.startsWith(
                                                             "https://",
                                                             true
-                                                        ) ||
-                                                            it.m3u8.startsWith(
-                                                                "http://",
-                                                                true
-                                                            )
+                                                        ) || it.m3u8.startsWith(
+                                                            "http://",
+                                                            true
+                                                        )
                                                     }
 
                                                 val index =
@@ -1614,10 +1289,7 @@ fun VietStreamApp(isTv: Boolean = false) {
                                                             "web_title",
                                                             "${movie.name} - ${episode.name}"
                                                         )
-                                                        putExtra(
-                                                            "web_url",
-                                                            embedUrl
-                                                        )
+                                                        putExtra("web_url", embedUrl)
                                                     }
                                                 )
 
@@ -1637,22 +1309,15 @@ fun VietStreamApp(isTv: Boolean = false) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("▶", color = Red)
-
                                 Spacer(Modifier.width(10.dp))
 
                                 Text(
-                                    episode.name.ifBlank {
-                                        "Tập phim"
-                                    },
+                                    episode.name.ifBlank { "Tập phim" },
                                     color = White,
                                     modifier = Modifier.weight(1f)
                                 )
 
-                                Text(
-                                    "Xem",
-                                    color = Red,
-                                    fontSize = 12.sp
-                                )
+                                Text("Xem", color = Red, fontSize = 12.sp)
                             }
                         }
                     }
@@ -1667,7 +1332,7 @@ fun VietStreamApp(isTv: Boolean = false) {
     }
 }
 
-// CÀI ĐẶT
+// CÀI ĐẶT — ĐÃ BỎ LIVE TV
 
 @Composable
 private fun SettingsScreen(
@@ -1678,13 +1343,8 @@ private fun SettingsScreen(
     onClearFavorites: () -> Unit,
     onClearHistory: () -> Unit
 ) {
-    var showClearFavorites by remember {
-        mutableStateOf(false)
-    }
-
-    var showClearHistory by remember {
-        mutableStateOf(false)
-    }
+    var showClearFavorites by remember { mutableStateOf(false) }
+    var showClearHistory by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -1708,11 +1368,7 @@ private fun SettingsScreen(
             modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
         )
 
-        Text(
-            "VIETSTREAM MAX",
-            color = Gray,
-            fontSize = 13.sp
-        )
+        Text("VIETSTREAM MAX", color = Gray, fontSize = 13.sp)
 
         Spacer(Modifier.height(24.dp))
 
@@ -1768,11 +1424,7 @@ private fun SettingsScreen(
             onClick = { onNavigate("Hoạt hình") }
         )
 
-        SettingsItem(
-            title = "Live TV",
-            subtitle = "Truyền hình trực tuyến",
-            onClick = { onNavigate("Live TV") }
-        )
+        // ĐÃ XÓA MỤC LIVE TV
 
         Spacer(Modifier.height(20.dp))
 
@@ -1797,9 +1449,7 @@ private fun SettingsScreen(
 
         Spacer(Modifier.height(24.dp))
 
-        HorizontalDivider(
-            color = Gray.copy(alpha = 0.25f)
-        )
+        HorizontalDivider(color = Gray.copy(alpha = 0.25f))
 
         Text(
             "VIETSTREAM MAX • Phiên bản 1.0.0",
@@ -1811,13 +1461,9 @@ private fun SettingsScreen(
 
     if (showClearFavorites) {
         AlertDialog(
-            onDismissRequest = {
-                showClearFavorites = false
-            },
+            onDismissRequest = { showClearFavorites = false },
             containerColor = Panel,
-            title = {
-                Text("Xóa phim yêu thích?", color = White)
-            },
+            title = { Text("Xóa phim yêu thích?", color = White) },
             text = {
                 Text(
                     "Toàn bộ danh sách phim yêu thích sẽ bị xóa.",
@@ -1844,13 +1490,9 @@ private fun SettingsScreen(
 
     if (showClearHistory) {
         AlertDialog(
-            onDismissRequest = {
-                showClearHistory = false
-            },
+            onDismissRequest = { showClearHistory = false },
             containerColor = Panel,
-            title = {
-                Text("Xóa lịch sử xem?", color = White)
-            },
+            title = { Text("Xóa lịch sử xem?", color = White) },
             text = {
                 Text(
                     "Toàn bộ lịch sử xem trên thiết bị sẽ bị xóa.",
@@ -1889,9 +1531,7 @@ private fun SettingsItem(
             .fillMaxWidth()
             .padding(top = 10.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (focused) Color(0xFF292020) else Panel
-            )
+            .background(if (focused) Color(0xFF292020) else Panel)
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = if (focused) FocusColor else Color.Transparent,
@@ -1913,11 +1553,7 @@ private fun SettingsItem(
 
             Spacer(Modifier.height(4.dp))
 
-            Text(
-                subtitle,
-                color = Gray,
-                fontSize = 12.sp
-            )
+            Text(subtitle, color = Gray, fontSize = 12.sp)
         }
 
         Text("›", color = Red, fontSize = 24.sp)
@@ -1950,21 +1586,14 @@ private fun TvNavigationItem(
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .focusable()
-            .padding(
-                horizontal = 14.dp,
-                vertical = 15.dp
-            ),
+            .padding(horizontal = 14.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text,
             color = if (selected || focused) White else Gray,
             fontSize = 15.sp,
-            fontWeight = if (selected) {
-                FontWeight.Bold
-            } else {
-                FontWeight.Medium
-            }
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
         )
     }
 }
@@ -2015,10 +1644,7 @@ fun MovieCard(
                             Color.Black.copy(alpha = 0.75f),
                             RoundedCornerShape(4.dp)
                         )
-                        .padding(
-                            horizontal = 6.dp,
-                            vertical = 3.dp
-                        )
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
                 )
             }
 
