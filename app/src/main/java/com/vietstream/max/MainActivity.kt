@@ -1353,6 +1353,7 @@ private fun SettingsScreen(
         }
         Text("VLC cần được cài trên thiết bị; một số đường dẫn có yêu cầu xác thực có thể không phát được bên ngoài app.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
         val playbackPrefs = remember { settingsContext.getSharedPreferences("vietstream_settings", Context.MODE_PRIVATE) }
+        val audioSupport = remember(settingsContext) { AudioSupport.detect(settingsContext) }
         var subtitleSize by remember { mutableIntStateOf(playbackPrefs.getInt("subtitle_size", 20)) }
         var subtitleColor by remember { mutableIntStateOf(playbackPrefs.getInt("subtitle_color", android.graphics.Color.WHITE)) }
         Spacer(Modifier.height(16.dp))
@@ -1384,11 +1385,12 @@ private fun SettingsScreen(
 
         Text("Ưu tiên âm thanh", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(AppSettings.AUDIO_AUTO to "Tự động", AppSettings.AUDIO_STEREO to "Stereo", AppSettings.AUDIO_DOLBY to "Dolby Atmos").forEach { (value, label) ->
+            listOf(AppSettings.AUDIO_AUTO to "Tự động", AppSettings.AUDIO_STEREO to "Stereo", AppSettings.AUDIO_DOLBY to "Dolby Atmos", AppSettings.AUDIO_SPATIAL to "Spatial 360°").forEach { (value, label) ->
                 FilterChip(selected = appSettings.audioMode == value, onClick = { AppSettings.saveAudioMode(settingsContext, value); onSettingsChanged() }, label = { Text(label, fontSize = 11.sp) })
             }
         }
-        Text("Tùy chọn âm thanh hiện được lưu; Dolby Atmos chỉ hoạt động nếu video, trình phát và thiết bị đều hỗ trợ.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        Text("Trạng thái thiết bị: Dolby Atmos " + (if (audioSupport.dolbyAtmos) "có khả năng hỗ trợ" else "chưa phát hiện hỗ trợ") + " • Spatial Audio " + (if (audioSupport.spatialReady) "đang sẵn sàng" else "không khả dụng/chưa bật") + ".", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        Text("Atmos cần nguồn phim có track Atmos và thiết bị/đường âm thanh tương thích. Spatial 360° dùng spatializer của Android cho âm thanh đa kênh; Stereo không thể biến thành Atmos gốc.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
 
         Spacer(Modifier.height(24.dp))
         Text("THƯ VIỆN CỦA BẠN", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
