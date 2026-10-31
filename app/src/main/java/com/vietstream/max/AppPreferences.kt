@@ -50,6 +50,7 @@ object AppPreferences {
     const val KEY_PLAYER = "playback_engine"
     const val KEY_AUDIO = "audio_preference"
     const val KEY_REFRESH_RATE = "smooth_motion"
+    const val KEY_PROFILES_ENABLED = "profiles_enabled"
 
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
