@@ -597,8 +597,7 @@ class MainActivity : ComponentActivity() {
             val darkTheme = when (appSettings.theme) {
                 AppSettings.THEME_LIGHT -> false
                 AppSettings.THEME_DARK -> true
-                else -> isSystemInDarkTheme()
-            }
+                else -> isSystemInDarkTheme()            }
             val accent = Color(appSettings.accentArgb.toInt())
             val scheme = if (darkTheme) {
                 darkColorScheme(primary = accent, secondary = accent, background = Black, surface = Panel, onBackground = White, onSurface = White)
@@ -1134,7 +1133,6 @@ fun VietStreamApp(
                                             }
                                         }
                                     }
-                                }
                             }
 
                             if (tab == "Tìm kiếm") {
@@ -1197,8 +1195,7 @@ fun VietStreamApp(
                     Text("CHỌN MÁY CHỦ VÀ TẬP", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp))
                     if (episodeServers.isEmpty()) Text("Chưa có tập phim khả dụng.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     episodeServers.forEach { server ->
-                        Text(server.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 6.dp))
-                        server.episodes.forEach { episode ->
+                        Text(server.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 6.dp))                        server.episodes.forEach { episode ->
                             Row(
                                 Modifier.fillMaxWidth().padding(vertical = 3.dp).liquidGlass(RoundedCornerShape(12.dp))
                                     .clickable {
