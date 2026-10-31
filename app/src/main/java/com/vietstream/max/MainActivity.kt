@@ -648,7 +648,6 @@ fun VietStreamApp(
     var filterCountry by remember { mutableStateOf("Tất cả") }
     var filterYear by remember { mutableStateOf("Tất cả") }
     var filterGenre by remember { mutableStateOf("Tất cả") }
-
     val profile = activeProfile
     val favorites = remember(profile?.id) {
         mutableStateOf(if (profile == null) emptyList() else readMovieList(context, profile.id, "favorites"))
@@ -1105,8 +1104,9 @@ fun VietStreamApp(
                                         }
                                     }
                                 }
+                            }
 
-                                if (tab == "Trang chủ" && movies.isNotEmpty()) {
+                            if (tab == "Trang chủ" && movies.isNotEmpty()) {
                                     item(key = "recommended_section_title") {
                                         Column(Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp)) {
                                             Text(
@@ -1144,7 +1144,6 @@ fun VietStreamApp(
                                         TextButton(onClick = { tab = "Lịch sử" }) { Text("◷ Lịch sử", color = MaterialTheme.colorScheme.onSurface) }
                                     }
                                 }
-                            }
                         }
                     }
                 }
@@ -1297,8 +1296,7 @@ private fun MovieFilters(
     val countries = listOf("Tất cả") + movies.flatMap { it.countries.orEmpty() }.distinct().sorted()
     val years = listOf("Tất cả") + movies.map { it.year }.filter { it.isNotBlank() }.distinct().sortedDescending()
     val genres = listOf("Tất cả") + movies.flatMap { it.genres.orEmpty() }.distinct().sorted()
-    Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("LỌC PHIM", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.weight(1f))
             TextButton(onClick = onReset) { Text("Xóa bộ lọc", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp) }
