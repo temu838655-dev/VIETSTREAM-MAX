@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -792,6 +793,10 @@ fun VietStreamApp(
         }
     }
 
+    BackHandler(enabled = selected != null || tab != "Trang chủ") {
+        if (selected != null) selected = null else tab = "Trang chủ"
+    }
+
     val tabs = if (profile?.isKids == true) {
         listOf("Trang chủ", "Hoạt hình", "Cài đặt")
     } else {
@@ -845,7 +850,8 @@ fun VietStreamApp(
         bottomBar = {
             if (!isTv) {
                 NavigationBar(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                        .height(86.dp)
                         .liquidGlass(RoundedCornerShape(28.dp)),
                     containerColor = Color.Transparent,
                     tonalElevation = 0.dp
@@ -863,10 +869,12 @@ fun VietStreamApp(
                                         "Hoạt hình" -> "★"
                                         else -> "⚙"
                                     },
-                                    color = if (tab == item) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (tab == item) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             },
-                            label = { Text(item, fontSize = 9.sp, maxLines = 1) },
+                            label = { Text(item, fontSize = 11.sp, fontWeight = if (tab == item) FontWeight.Bold else FontWeight.Medium, maxLines = 1) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedTextColor = MaterialTheme.colorScheme.onSurface,
                                 unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -949,7 +957,7 @@ fun VietStreamApp(
                                 (filterYear == "Tất cả" || movie.year == filterYear) &&
                                 (filterGenre == "Tất cả" || movie.genres.orEmpty().any { it.equals(filterGenre, true) })
                         }
-                        // Netflix-style horizontal poster rail; each poster remains independently focusable.
+                        // Poster dùng lưới dọc; không cần vuốt ngang để khám phá phim.
 
                         // Toàn bộ nội dung phim, bộ lọc và poster dùng chung một vùng cuộn.
                         LazyColumn(
@@ -1091,16 +1099,16 @@ fun VietStreamApp(
                                         Text("Không có phim phù hợp với bộ lọc.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
-                                else -> item(key = "netflix_movie_rail") {
+                                else -> {
                                     val railMovies = if (tab == "Trang chủ" && updatedMovies.isNotEmpty()) updatedMovies else visibleMovies
-                                    LazyRow(
-                                        contentPadding = PaddingValues(horizontal = if (isTv) 22.dp else 14.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(if (isTv) 18.dp else 12.dp)
-                                    ) {
-                                        lazyRowItems(items = railMovies, key = { it.slug }) { movie ->
-                                            Box(Modifier.width(if (isTv) 190.dp else 150.dp)) {
-                                                MovieCard(movie, favoriteList.any { it.slug == movie.slug }, isTv) { selected = movie }
+                                    lazyItems(items = railMovies.chunked(2), key = { row -> row.firstOrNull()?.slug ?: "empty_row" }) { row ->
+                                        Row(Modifier.fillMaxWidth().padding(horizontal = if (isTv) 22.dp else 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            row.forEach { movie ->
+                                                Box(Modifier.weight(1f)) {
+                                                    MovieCard(movie, favoriteList.any { it.slug == movie.slug }, isTv) { selected = movie }
+                                                }
                                             }
+                                            if (row.size == 1) Spacer(Modifier.weight(1f))
                                         }
                                     }
                                 }
@@ -1122,16 +1130,17 @@ fun VietStreamApp(
                                             )
                                         }
                                     }
-                                    item(key = "recommended_movie_rail") {
-                                        LazyRow(
-                                            contentPadding = PaddingValues(horizontal = if (isTv) 22.dp else 14.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(if (isTv) 18.dp else 12.dp)
-                                        ) {
-                                            lazyRowItems(items = visibleMovies, key = { "discover_" + it.slug }) { movie ->
-                                                Box(Modifier.width(if (isTv) 190.dp else 150.dp)) {
+                                    item(key = "recommended_movie_grid_title") {
+                                        Text("Vuốt lên để khám phá thêm", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                                    }
+                                    lazyItems(items = visibleMovies.chunked(2), key = { row -> "discover_" + (row.firstOrNull()?.slug ?: "empty") }) { row ->
+                                        Row(Modifier.fillMaxWidth().padding(horizontal = if (isTv) 22.dp else 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            row.forEach { movie ->
+                                                Box(Modifier.weight(1f)) {
                                                     MovieCard(movie, favoriteList.any { it.slug == movie.slug }, isTv) { selected = movie }
                                                 }
                                             }
+                                            if (row.size == 1) Spacer(Modifier.weight(1f))
                                         }
                                     }
                             }
@@ -1160,7 +1169,7 @@ fun VietStreamApp(
                 Column(Modifier.heightIn(max = if (isTv) 650.dp else 520.dp).verticalScroll(rememberScrollState())) {
                     MoviePoster(movie.poster, movie.name, Modifier.fillMaxWidth().height(if (isTv) 240.dp else 180.dp).clip(RoundedCornerShape(10.dp)))
                     Text("${movie.origin} • ${movie.year}", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(vertical = 8.dp))
-                    Text(detailText, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                    Text(detailText, color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, lineHeight = 22.sp)
                     if (movie.lastEpisodeUrl.orEmpty().startsWith("http", true)) {
                         Button(
                             onClick = {
@@ -1278,10 +1287,10 @@ fun VietStreamApp(
 private fun MovieFilterRow(title: String, options: List<String>, selected: String, onSelect: (String) -> Unit) {
     if (options.isEmpty()) return
     Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
+        Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             options.forEach { option ->
-                FilterChip(selected = selected == option, onClick = { onSelect(option) }, label = { Text(option, fontSize = 11.sp, maxLines = 1) })
+                FilterChip(selected = selected == option, onClick = { onSelect(option) }, label = { Text(option, fontSize = 13.sp, maxLines = 1) })
             }
         }
     }
@@ -1547,7 +1556,7 @@ fun MovieCard(movie: Movie, favorite: Boolean = false, isTv: Boolean = false, on
                 Text(
                     movie.name,
                     color = Color.White,
-                    fontSize = if (isTv) 16.sp else 13.sp,
+                    fontSize = if (isTv) 18.sp else 15.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -1557,7 +1566,7 @@ fun MovieCard(movie: Movie, favorite: Boolean = false, isTv: Boolean = false, on
                     Text(
                         movie.origin,
                         color = Color.White.copy(alpha = 0.78f),
-                        fontSize = 10.sp,
+                        fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
