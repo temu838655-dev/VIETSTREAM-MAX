@@ -136,7 +136,9 @@ data class Movie(
     val lastEpisodeIsM3u8: Boolean = false,
     val lastEpisodeTitles: List<String> = emptyList(),
     val lastEpisodeUrls: List<String> = emptyList(),
-    val lastEpisodeIndex: Int = 0
+    val lastEpisodeIndex: Int = 0,
+    // Nhãn chỉ được gán khi metadata API khai báo định dạng âm thanh rõ ràng.
+    val audioLabels: List<String> = emptyList()
 )
 
 data class UserProfile(
@@ -210,6 +212,32 @@ private fun jsonNames(obj: JsonObject, key: String): List<String> {
     } catch (_: Exception) { emptyList() }
 }
 
+private fun scanAudioLabels(element: JsonElement?): List<String> {
+    if (element == null || element.isJsonNull) return emptyList()
+    val text = buildString {
+        fun collect(node: JsonElement?) {
+            when {
+                node == null || node.isJsonNull -> Unit
+                node.isJsonPrimitive -> append(' ').append(node.asString.lowercase())
+                node.isJsonArray -> node.asJsonArray.forEach(::collect)
+                node.isJsonObject -> node.asJsonObject.entrySet().forEach { (key, value) ->
+                    append(' ').append(key.lowercase())
+                    collect(value)
+                }
+            }
+        }
+        collect(element)
+    }
+    val labels = mutableListOf<String>()
+    if (listOf("dolby atmos", "e-ac-3-joc", "eac3 joc", "ec-3-joc", "atmos").any(text::contains)) {
+        labels += "DOLBY ATMOS"
+    }
+    if (listOf("spatial 360", "spatial audio", "360 spatial", "immersive audio").any(text::contains)) {
+        labels += "SPATIAL 360°"
+    }
+    return labels.distinct()
+}
+
 private fun resolvePoster(raw: String, imageRoot: String): String {
     val value = raw.trim()
     if (value.isBlank()) return ""
@@ -253,7 +281,8 @@ fun parseMovies(root: JsonObject): List<Movie> {
                 origin = jsonText(item, "origin_name"),
                 description = jsonText(item, "content"),
                 countries = jsonNames(item, "country"),
-                genres = jsonNames(item, "category")
+                genres = jsonNames(item, "category"),
+                audioLabels = scanAudioLabels(item)
             )
         } catch (_: Exception) { null }
     }
@@ -1556,12 +1585,35 @@ fun MovieCard(movie: Movie, favorite: Boolean = false, isTv: Boolean = false, on
                 Text(
                     movie.name,
                     color = Color.White,
-                    fontSize = if (isTv) 18.sp else 15.sp,
+                    fontSize = if (isTv) 19.sp else 16.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = if (isTv) 19.sp else 16.sp
+                    lineHeight = if (isTv) 21.sp else 19.sp
                 )
+                if (movie.audioLabels.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        movie.audioLabels.forEach { audioLabel ->
+                            Text(
+                                audioLabel,
+                                color = Color.White,
+                                fontSize = if (isTv) 9.sp else 8.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .background(
+                                        if (audioLabel == "DOLBY ATMOS") Color(0xFF292929) else Color(0xFF174A70),
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .border(1.dp, Color.White.copy(alpha = 0.28f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 5.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
                 if (movie.origin.isNotBlank()) {
                     Text(
                         movie.origin,
