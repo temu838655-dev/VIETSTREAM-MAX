@@ -334,6 +334,7 @@ class InAppPlayerActivity : Activity() {
             "Danh sách tập",
             "Tốc độ",
             "Âm thanh",
+            "Dolby / Spatial",
             "Phụ đề",
             "Kiểu chữ",
             "Tập tiếp"
@@ -344,6 +345,7 @@ class InAppPlayerActivity : Activity() {
             { showEpisodeList() },
             { showSpeedOptions() },
             { showAudioTrackOptions() },
+            { showAudioModeOptions() },
             { showSubtitleOptions() },
             { showSubtitleStyleOptions() },
             { nextEpisode() }
@@ -390,23 +392,35 @@ class InAppPlayerActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
         }
-        fun controlButton(label: String, action: () -> Unit): Button = Button(this).apply {
+        fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+        fun controlButton(label: String, action: () -> Unit, isMain: Boolean = false): Button = Button(this).apply {
             text = label
-            textSize = if (isTv) 24f else 20f
+            textSize = if (isMain) { if (isTv) 34f else 30f } else { if (isTv) 29f else 25f }
             isAllCaps = false
+            minWidth = 0
+            minimumWidth = 0
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(8), dp(4), dp(8), dp(4))
             setTextColor(Color.WHITE)
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.argb(190, 18, 18, 18)); cornerRadius = 48f
+                setColor(if (isMain) Color.argb(245, 190, 20, 32) else Color.argb(225, 18, 18, 18))
+                cornerRadius = dp(48).toFloat()
             }
+            elevation = dp(8).toFloat()
             setOnClickListener { action() }
-            layoutParams = LinearLayout.LayoutParams(if (isTv) 76 else 60, if (isTv) 64 else 54).apply { marginStart = 10; marginEnd = 10 }
+            val side = if (isTv) 96 else 82
+            val height = if (isTv) 88 else 76
+            layoutParams = LinearLayout.LayoutParams(dp(if (isMain) side + 12 else side), dp(if (isMain) height + 8 else height)).apply {
+                marginStart = dp(8); marginEnd = dp(8)
+            }
         }
-        center.addView(controlButton("−10", { player?.seekBack() }))
+        center.addView(controlButton("↶ 10", { player?.seekBack() }))
         playPauseButton = controlButton("▶", {
             player?.let { if (it.isPlaying) it.pause() else it.play() }
-        })
+        }, isMain = true)
         center.addView(playPauseButton)
-        center.addView(controlButton("+10", { player?.seekForward() }))
+        center.addView(controlButton("10 ↷", { player?.seekForward() }))
         overlay.addView(center, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
 
         val bottom = LinearLayout(this).apply {
@@ -418,10 +432,12 @@ class InAppPlayerActivity : Activity() {
             )
         }
         val times = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        positionLabel = TextView(this).apply { text = "00:00"; setTextColor(Color.WHITE); textSize = 12f }
-        durationLabel = TextView(this).apply { text = "00:00"; setTextColor(Color.WHITE); textSize = 12f; gravity = Gravity.END }
+        positionLabel = TextView(this).apply { text = "00:00"; setTextColor(Color.WHITE); textSize = 14f; setShadowLayer(3f, 1f, 1f, Color.BLACK) }
+        durationLabel = TextView(this).apply { text = "00:00"; setTextColor(Color.WHITE); textSize = 14f; gravity = Gravity.END; setShadowLayer(3f, 1f, 1f, Color.BLACK) }
         progressBar = SeekBar(this).apply {
             max = 1
+            minimumHeight = (32 * resources.displayMetrics.density).toInt()
+            setPadding(8, 8, 8, 8)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onStartTrackingTouch(seekBar: SeekBar) { userSeeking = true }
                 override fun onStopTrackingTouch(seekBar: SeekBar) { player?.seekTo(seekBar.progress.toLong()); userSeeking = false }
@@ -660,6 +676,50 @@ class InAppPlayerActivity : Activity() {
                     titleView.text = titles[which]
                     saveProgress()
                 }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Đóng", null)
+            .show()
+    }
+
+    private fun showAudioModeOptions() {
+        val support = try {
+            AudioSupport.detect(this)
+        } catch (_: Throwable) {
+            AudioSupport(false, false, false)
+        }
+        val modes = arrayOf("Tự động (khuyến nghị)", "Stereo", "Dolby Atmos", "Spatial 360°")
+        val values = arrayOf(AppSettings.AUDIO_AUTO, AppSettings.AUDIO_STEREO, AppSettings.AUDIO_DOLBY, AppSettings.AUDIO_SPATIAL)
+        val current = settings.getString("app_audio", AppSettings.AUDIO_AUTO) ?: AppSettings.AUDIO_AUTO
+        val selected = values.indexOf(current).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Chế độ âm thanh")
+            .setSingleChoiceItems(modes, selected) { dialog, which ->
+                val mode = values[which]
+                AppSettings.saveAudioMode(this, mode)
+                val selector = trackSelector
+                selector?.parameters = selector.buildUponParameters().apply {
+                    when (mode) {
+                        AppSettings.AUDIO_STEREO -> setMaxAudioChannelCount(2)
+                        AppSettings.AUDIO_DOLBY -> {
+                            setMaxAudioChannelCount(Int.MAX_VALUE)
+                            setPreferredAudioMimeTypes(MimeTypes.AUDIO_E_AC3_JOC, MimeTypes.AUDIO_AC4, MimeTypes.AUDIO_E_AC3)
+                        }
+                        AppSettings.AUDIO_SPATIAL -> {
+                            setMaxAudioChannelCount(Int.MAX_VALUE)
+                            setPreferredAudioMimeTypes(MimeTypes.AUDIO_E_AC3_JOC, MimeTypes.AUDIO_AC4, MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_AC3, MimeTypes.AUDIO_AAC)
+                        }
+                        else -> {
+                            setMaxAudioChannelCount(Int.MAX_VALUE)
+                            setPreferredAudioMimeTypes()
+                        }
+                    }
+                }.build()
+                Toast.makeText(this, when (mode) {
+                    AppSettings.AUDIO_DOLBY -> if (support.dolbyAtmos) "Đã ưu tiên track Dolby; cần nguồn Atmos và thiết bị tương thích." else "Thiết bị chưa báo hỗ trợ Atmos; sẽ phát định dạng tương thích."
+                    AppSettings.AUDIO_SPATIAL -> if (support.spatialReady) "Spatializer Android đang sẵn sàng." else "Spatial 360° chưa được thiết bị/đường âm thanh hỗ trợ."
+                    else -> "Đã đổi chế độ âm thanh."
+                }, Toast.LENGTH_LONG).show()
                 dialog.dismiss()
             }
             .setNegativeButton("Đóng", null)
