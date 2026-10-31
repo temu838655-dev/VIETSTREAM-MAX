@@ -47,6 +47,8 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.animation.Crossfade
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
@@ -965,20 +967,56 @@ fun VietStreamApp(
 
                             if (tab == "Trang chủ" && movies.isNotEmpty()) {
                                 item(key = "hero_banner") {
-                                    val hero = movies.first()
-                                    Box(
-                                        Modifier.fillMaxWidth().height(if (isTv) 300.dp else 225.dp).padding(horizontal = 12.dp)
-                                            .clip(RoundedCornerShape(16.dp)).clickable { selected = hero }
+                                    // Rotate through the first API results (the home feed's newest updates).
+                                    // A short delay and a small candidate set keep the carousel lightweight.
+                                    val heroCandidates = movies.take(8)
+                                    var heroIndex by remember(movies) { mutableIntStateOf(0) }
+                                    LaunchedEffect(heroCandidates, tab) {
+                                        if (heroCandidates.size > 1) {
+                                            while (true) {
+                                                delay(5000)
+                                                heroIndex = (heroIndex + 1) % heroCandidates.size
+                                            }
+                                        }
+                                    }
+                                    val hero = heroCandidates.getOrNull(heroIndex) ?: movies.first()
+                                    Column(
+                                        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        MoviePoster(hero.poster, hero.name, Modifier.fillMaxSize())
-                                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.95f)))))
-                                        Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-                                            Text("VIETSTREAM MAX", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                                            Text(hero.name, color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 30.sp else 22.sp, fontWeight = FontWeight.Black, maxLines = 2)
-                                            Text("${hero.year} • ${hero.origin}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
-                                            Spacer(Modifier.height(8.dp))
-                                            Button(onClick = { selected = hero }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) {
-                                                Text("▶  Xem ngay")
+                                        Crossfade(targetState = hero, label = "home_hero_carousel") { currentHero ->
+                                            Box(
+                                                Modifier.fillMaxWidth().height(if (isTv) 300.dp else 225.dp)
+                                                    .liquidGlass(RoundedCornerShape(20.dp))
+                                                    .clickable { selected = currentHero }
+                                            ) {
+                                                MoviePoster(currentHero.poster, currentHero.name, Modifier.fillMaxSize())
+                                                Box(Modifier.fillMaxSize().background(
+                                                    Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.96f)))
+                                                ))
+                                                Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+                                                    Text("VIETSTREAM MAX  •  ĐỀ XUẤT MỚI", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                                    Text(currentHero.name, color = Color.White, fontSize = if (isTv) 30.sp else 22.sp, fontWeight = FontWeight.Black, maxLines = 2)
+                                                    Text("${currentHero.year} • ${currentHero.origin}", color = Color.White.copy(alpha = 0.82f), fontSize = 11.sp)
+                                                    Spacer(Modifier.height(8.dp))
+                                                    Button(onClick = { selected = currentHero }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) {
+                                                        Text("▶  Xem ngay")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            heroCandidates.forEachIndexed { index, _ ->
+                                                Box(
+                                                    Modifier.padding(horizontal = 3.dp).size(if (index == heroIndex) 18.dp else 6.dp, 6.dp)
+                                                        .clip(RoundedCornerShape(50))
+                                                        .background(if (index == heroIndex) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.35f))
+                                                        .clickable { heroIndex = index }
+                                                )
                                             }
                                         }
                                     }
