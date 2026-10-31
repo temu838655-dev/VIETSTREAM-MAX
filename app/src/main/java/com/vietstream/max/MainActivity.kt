@@ -1003,7 +1003,7 @@ fun VietStreamApp(
                                     ) {
                                         Crossfade(targetState = hero, label = "home_hero_carousel") { currentHero ->
                                             Box(
-                                                Modifier.fillMaxWidth().height(if (isTv) 300.dp else 225.dp)
+                                                Modifier.fillMaxWidth().height(if (isTv) 360.dp else 270.dp)
                                                     .liquidGlass(RoundedCornerShape(20.dp))
                                                     .clickable { selected = currentHero }
                                             ) {
@@ -1042,14 +1042,20 @@ fun VietStreamApp(
 
                             item(key = "movie_section_title") {
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        when (tab) {
-                                            "Trang chủ" -> "Phim mới cập nhật"
-                                            "Tìm kiếm" -> "Kết quả tìm kiếm"
-                                            else -> tab
-                                        },
-                                        color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 25.sp else 19.sp, fontWeight = FontWeight.Bold
-                                    )
+                                    Column {
+                                        Text(
+                                            when (tab) {
+                                                "Trang chủ" -> "Mới cập nhật"
+                                                "Tìm kiếm" -> "Kết quả tìm kiếm"
+                                                else -> tab
+                                            },
+                                            color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 25.sp else 20.sp, fontWeight = FontWeight.Bold
+                                        )
+                                        if (tab == "Trang chủ") Text(
+                                            "Những bộ phim vừa có tập mới",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp
+                                        )
+                                    }
                                     Spacer(Modifier.weight(1f))
                                     if (loading) CircularProgressIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
                                 }
@@ -1087,13 +1093,44 @@ fun VietStreamApp(
                                     }
                                 }
                                 else -> item(key = "netflix_movie_rail") {
+                                    val railMovies = if (tab == "Trang chủ" && updatedMovies.isNotEmpty()) updatedMovies else visibleMovies
                                     LazyRow(
                                         contentPadding = PaddingValues(horizontal = if (isTv) 22.dp else 14.dp),
                                         horizontalArrangement = Arrangement.spacedBy(if (isTv) 18.dp else 12.dp)
                                     ) {
-                                        lazyRowItems(items = visibleMovies, key = { it.slug }) { movie ->
-                                            Box(Modifier.width(if (isTv) 172.dp else 142.dp)) {
+                                        lazyRowItems(items = railMovies, key = { it.slug }) { movie ->
+                                            Box(Modifier.width(if (isTv) 190.dp else 150.dp)) {
                                                 MovieCard(movie, favoriteList.any { it.slug == movie.slug }, isTv) { selected = movie }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (tab == "Trang chủ" && movies.isNotEmpty()) {
+                                    item(key = "recommended_section_title") {
+                                        Column(Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp)) {
+                                            Text(
+                                                "Khám phá thêm",
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontSize = if (isTv) 25.sp else 20.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                "Các lựa chọn khác dành cho bạn",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                    }
+                                    item(key = "recommended_movie_rail") {
+                                        LazyRow(
+                                            contentPadding = PaddingValues(horizontal = if (isTv) 22.dp else 14.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(if (isTv) 18.dp else 12.dp)
+                                        ) {
+                                            lazyRowItems(items = visibleMovies, key = { "discover_" + it.slug }) { movie ->
+                                                Box(Modifier.width(if (isTv) 190.dp else 150.dp)) {
+                                                    MovieCard(movie, favoriteList.any { it.slug == movie.slug }, isTv) { selected = movie }
+                                                }
                                             }
                                         }
                                     }
@@ -1473,42 +1510,72 @@ private fun TvNavigationItem(text: String, selected: Boolean, onClick: () -> Uni
 fun MovieCard(movie: Movie, favorite: Boolean = false, isTv: Boolean = false, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Column(
-        Modifier.fillMaxWidth().liquidGlass(RoundedCornerShape(16.dp))
-            .then(if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)) else Modifier)
-            .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable()
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .then(if (focused) Modifier.border(2.dp, BoOrange, RoundedCornerShape(12.dp)) else Modifier)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .focusable()
     ) {
-        Box {
-            MoviePoster(movie.poster, movie.name, Modifier.fillMaxWidth().aspectRatio(0.68f).clip(RoundedCornerShape(10.dp)))
-            if (movie.year.isNotBlank()) {
-                Text(movie.year, color = MaterialTheme.colorScheme.onSurface, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomStart).padding(7.dp)
-                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 3.dp))
-            }
-            if (favorite) Text("♥", color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp))
-        }
-        Column(
-            Modifier.fillMaxWidth()
-                .padding(top = 6.dp)
-                .clip(RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp))
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f))
-                .padding(horizontal = 9.dp, vertical = 9.dp)
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(0.68f).clip(RoundedCornerShape(10.dp))
         ) {
-            Text(
-                movie.name,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = if (isTv) 17.sp else 14.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = if (isTv) 21.sp else 18.sp
+            MoviePoster(movie.poster, movie.name, Modifier.fillMaxSize())
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.0f to Color.Transparent,
+                            0.55f to Color.Transparent,
+                            1.0f to Color.Black.copy(alpha = 0.94f)
+                        )
+                    )
+                )
             )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                movie.origin,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            if (movie.year.isNotBlank()) {
+                Text(
+                    movie.year,
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.TopStart).padding(7.dp)
+                        .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                )
+            }
+            if (favorite) {
+                Text("♥", color = BoOrange, fontSize = 19.sp, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp))
+            }
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 9.dp, vertical = 10.dp)) {
+                Text(
+                    movie.name,
+                    color = Color.White,
+                    fontSize = if (isTv) 16.sp else 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = if (isTv) 19.sp else 16.sp
+                )
+                if (movie.origin.isNotBlank()) {
+                    Text(
+                        movie.origin,
+                        color = Color.White.copy(alpha = 0.78f),
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            if (focused) {
+                Box(
+                    Modifier.align(Alignment.Center).size(if (isTv) 52.dp else 42.dp)
+                        .clip(CircleShape)
+                        .background(BoOrange.copy(alpha = 0.94f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("▶", color = Color.White, fontSize = if (isTv) 23.sp else 19.sp, fontWeight = FontWeight.Black)
+                }
+            }
         }
     }
 }
