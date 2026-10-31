@@ -15,6 +15,8 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items as lazyRowItems
 import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -57,13 +59,23 @@ import retrofit2.http.Query
 
 private val Black = Color(0xFF080808)
 private val Panel = Color(0xFF191919)
-private val Red = Color(0xFFE50914)
+private val Red = Color(0xFF2878F0)
 private val White = Color(0xFFF5F5F5)
 private val Gray = Color(0xFFAAAAAA)
-private val FocusColor = Color(0xFFFF4545)
+private val BoBlue = Color(0xFF2878F0)
+private val BoOrange = Color(0xFFFF8A00)
+private val FocusColor = Color(0xFFFF8A00)
+
+// Kept lightweight (no real-time backdrop blur) for Android phones and TV boxes.
+@Composable
+private fun BoPhimWordmark(size: Int = 22) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Bo", color = BoBlue, fontSize = size.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.8).sp)
+        Text("Phim", color = BoOrange, fontSize = size.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.8).sp)
+    }
+}
 
 // Liquid Glass surfaces: translucent layered gradients and fine highlights.
-// Kept lightweight (no real-time backdrop blur) for Android phones and TV boxes.
 private fun Modifier.liquidGlass(
     shape: RoundedCornerShape = RoundedCornerShape(20.dp)
 ): Modifier = this
@@ -366,9 +378,7 @@ private fun ProfilePickerScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("N", color = MaterialTheme.colorScheme.primary, fontSize = 42.sp, fontWeight = FontWeight.Black)
-            Spacer(Modifier.width(8.dp))
-            Text("VIETSTREAM", color = MaterialTheme.colorScheme.onSurface, fontSize = 25.sp, fontWeight = FontWeight.Black)
+            BoPhimWordmark(25)
         }
         Text("Ai đang xem?", color = MaterialTheme.colorScheme.onSurface, fontSize = 25.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 24.dp, bottom = 24.dp))
         Column(verticalArrangement = Arrangement.spacedBy(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -878,7 +888,7 @@ fun VietStreamApp(
                 Column(Modifier.width(190.dp).fillMaxHeight().padding(8.dp)
                     .liquidGlass(RoundedCornerShape(24.dp)).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("VIETSTREAM", color = MaterialTheme.colorScheme.primary, fontSize = 19.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(12.dp))
+                    BoPhimWordmark(19)
                     tabs.forEach { item -> TvNavigationItem(item, tab == item) { tab = item } }
                     if (profile?.isKids != true) {
                         TvNavigationItem("Tìm kiếm", tab == "Tìm kiếm") { tab = "Tìm kiếm" }
@@ -896,15 +906,7 @@ fun VietStreamApp(
                         .liquidGlass(RoundedCornerShape(22.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("N", color = MaterialTheme.colorScheme.primary, fontSize = if (isTv) 40.sp else 32.sp, fontWeight = FontWeight.Black)
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Row {
-                            Text("VIET", color = MaterialTheme.colorScheme.primary, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                            Text("STREAM", color = MaterialTheme.colorScheme.onSurface, fontSize = 19.sp, fontWeight = FontWeight.Black)
-                        }
-                        Text("MAX", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
-                    }
+                    BoPhimWordmark(if (isTv) 27 else 23)
                     Spacer(Modifier.weight(1f))
                     if (profilesEnabled) {
                         TextButton(onClick = { needsProfilePicker = true; selected = null }) {
@@ -948,7 +950,7 @@ fun VietStreamApp(
                                 (filterYear == "Tất cả" || movie.year == filterYear) &&
                                 (filterGenre == "Tất cả" || movie.genres.orEmpty().any { it.equals(filterGenre, true) })
                         }
-                        val movieRows = visibleMovies.chunked(if (isTv) 4 else 2)
+                        // Netflix-style horizontal poster rail; each poster remains independently focusable.
 
                         // Toàn bộ nội dung phim, bộ lọc và poster dùng chung một vùng cuộn.
                         LazyColumn(
@@ -1010,7 +1012,7 @@ fun VietStreamApp(
                                                     Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.96f)))
                                                 ))
                                                 Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
-                                                    Text("VIETSTREAM MAX  •  ĐỀ XUẤT MỚI", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                                    Text("BO PHIM  •  ĐỀ XUẤT MỚI", color = BoOrange, fontSize = 10.sp, fontWeight = FontWeight.Black)
                                                     Text(currentHero.name, color = Color.White, fontSize = if (isTv) 30.sp else 22.sp, fontWeight = FontWeight.Black, maxLines = 2)
                                                     Text("${currentHero.year} • ${currentHero.origin}", color = Color.White.copy(alpha = 0.82f), fontSize = 11.sp)
                                                     Spacer(Modifier.height(8.dp))
@@ -1084,19 +1086,15 @@ fun VietStreamApp(
                                         Text("Không có phim phù hợp với bộ lọc.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
-                                else -> lazyItems(items = movieRows, key = { row -> row.first().slug }) { row ->
-                                    Row(
-                                        Modifier.fillMaxWidth().padding(horizontal = if (isTv) 22.dp else 12.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(if (isTv) 18.dp else 12.dp),
-                                        verticalAlignment = Alignment.Top
+                                else -> item(key = "netflix_movie_rail") {
+                                    LazyRow(
+                                        contentPadding = PaddingValues(horizontal = if (isTv) 22.dp else 14.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(if (isTv) 18.dp else 12.dp)
                                     ) {
-                                        row.forEach { movie ->
-                                            Box(Modifier.weight(1f)) {
+                                        lazyRowItems(items = visibleMovies, key = { it.slug }) { movie ->
+                                            Box(Modifier.width(if (isTv) 172.dp else 142.dp)) {
                                                 MovieCard(movie, favoriteList.any { it.slug == movie.slug }, isTv) { selected = movie }
                                             }
-                                        }
-                                        repeat((if (isTv) 4 else 2) - row.size) {
-                                            Spacer(Modifier.weight(1f))
                                         }
                                     }
                                 }
@@ -1293,7 +1291,7 @@ private fun SettingsScreen(
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState()).padding(horizontal = if (isTv) 28.dp else 18.dp)) {
         Text("CÀI ĐẶT", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Text("Thiết lập ứng dụng", color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 30.sp else 24.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
-        Text("VIETSTREAM MAX", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        BoPhimWordmark(16)
 
         Spacer(Modifier.height(20.dp))
         Text("HỒ SƠ NGƯỜI DÙNG", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -1418,7 +1416,7 @@ private fun SettingsScreen(
         SettingsItem("Xóa lịch sử xem", "Xóa toàn bộ lịch sử trên thiết bị") { showClearHistory = true }
         Spacer(Modifier.height(24.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f))
-        Text("VIETSTREAM MAX • Phiên bản 1.0.0", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(vertical = 18.dp))
+        Text("BO PHIM • Phiên bản 1.0.0", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(vertical = 18.dp))
     }
     if (showClearFavorites) AlertDialog(
         onDismissRequest = { showClearFavorites = false }, containerColor = MaterialTheme.colorScheme.surface,
