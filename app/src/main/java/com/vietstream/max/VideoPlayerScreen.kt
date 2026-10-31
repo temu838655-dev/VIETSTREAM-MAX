@@ -362,7 +362,7 @@ class InAppPlayerActivity : Activity() {
         val controlsScroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             isFillViewport = true
-            addView(controls, HorizontalScrollView.LayoutParams(
+            addView(controls, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ))
