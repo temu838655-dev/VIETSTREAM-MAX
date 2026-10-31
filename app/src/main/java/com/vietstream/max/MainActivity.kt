@@ -60,6 +60,33 @@ private val White = Color(0xFFF5F5F5)
 private val Gray = Color(0xFFAAAAAA)
 private val FocusColor = Color(0xFFFF4545)
 
+// Liquid Glass surfaces: translucent layered gradients and fine highlights.
+// Kept lightweight (no real-time backdrop blur) for Android phones and TV boxes.
+private fun Modifier.liquidGlass(
+    shape: RoundedCornerShape = RoundedCornerShape(20.dp)
+): Modifier = this
+    .clip(shape)
+    .background(
+        Brush.linearGradient(
+            colors = listOf(
+                Color(0xFF64748B).copy(alpha = 0.22f),
+                Color(0xFF253044).copy(alpha = 0.16f),
+                Color(0xFF101522).copy(alpha = 0.34f)
+            )
+        )
+    )
+    .border(
+        1.dp,
+        Brush.linearGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.34f),
+                Color.White.copy(alpha = 0.08f),
+                Color(0xFF9CCBFF).copy(alpha = 0.20f)
+            )
+        ),
+        shape
+    )
+
 /** Try VLC for a direct media URL. Returns false if VLC cannot be launched. */
 private fun openInVlc(context: Context, url: String, title: String): Boolean {
     return try {
@@ -788,10 +815,15 @@ fun VietStreamApp(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color(0xFF080D18),
         bottomBar = {
             if (!isTv) {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                NavigationBar(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        .liquidGlass(RoundedCornerShape(28.dp)),
+                    containerColor = Color.Transparent,
+                    tonalElevation = 0.dp
+                ) {
                     tabs.forEach { item ->
                         NavigationBarItem(
                             selected = tab == item,
@@ -820,9 +852,15 @@ fun VietStreamApp(
             }
         }
     ) { padding ->
-        Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(padding)) {
+        Row(Modifier.fillMaxSize().background(
+            Brush.verticalGradient(
+                listOf(Color(0xFF111B2B), Color(0xFF080D18), Color(0xFF05070D))
+            )
+        ).padding(padding)) {
             if (isTv) {
-                Column(Modifier.width(190.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surface).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.width(190.dp).fillMaxHeight().padding(8.dp)
+                    .liquidGlass(RoundedCornerShape(24.dp)).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("VIETSTREAM", color = MaterialTheme.colorScheme.primary, fontSize = 19.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(12.dp))
                     tabs.forEach { item -> TvNavigationItem(item, tab == item) { tab = item } }
                     if (profile?.isKids != true) {
@@ -833,9 +871,12 @@ fun VietStreamApp(
                 }
             }
 
-            Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Column(Modifier.fillMaxSize().background(
+                Brush.verticalGradient(listOf(Color(0xFF101827), Color(0xFF080D18)))
+            )) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = if (isTv) 28.dp else 18.dp, vertical = 12.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = if (isTv) 28.dp else 18.dp, vertical = 12.dp)
+                        .liquidGlass(RoundedCornerShape(22.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("N", color = MaterialTheme.colorScheme.primary, fontSize = if (isTv) 40.sp else 32.sp, fontWeight = FontWeight.Black)
@@ -1339,8 +1380,9 @@ private fun SettingsItem(title: String, subtitle: String, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(12.dp))
-            .background(if (focused) Color(0xFF292020) else MaterialTheme.colorScheme.surface)
-            .border(if (focused) 2.dp else 1.dp, if (focused) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(12.dp))
+            .then(if (focused) Modifier.background(Color(0xFF25364D), RoundedCornerShape(16.dp))
+                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+            else Modifier.liquidGlass(RoundedCornerShape(16.dp)))
             .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable().padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
