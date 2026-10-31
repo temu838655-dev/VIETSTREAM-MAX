@@ -628,6 +628,7 @@ fun VietStreamApp(
 
     var tab by remember { mutableStateOf("Trang chủ") }
     var movies by remember { mutableStateOf<List<Movie>>(emptyList()) }
+    var updatedMovies by remember { mutableStateOf<List<Movie>>(emptyList()) }
     var selected by remember { mutableStateOf<Movie?>(null) }
     var keyword by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
@@ -712,7 +713,21 @@ fun VietStreamApp(
                 "Phim lẻ" -> parseMovies(MovieService.api.list("phim-le"))
                 "Phim bộ" -> parseMovies(MovieService.api.list("phim-bo"))
                 "Hoạt hình" -> parseMovies(MovieService.api.list("hoat-hinh"))
-                "Trang chủ" -> if (profile?.isKids == true) parseMovies(MovieService.api.list("hoat-hinh")) else parseMovies(MovieService.api.home())
+                "Trang chủ" -> {
+                    if (profile?.isKids == true) {
+                        updatedMovies = emptyList()
+                        parseMovies(MovieService.api.list("hoat-hinh"))
+                    } else {
+                        val homeMovies = parseMovies(MovieService.api.home())
+                        // Lấy đúng danh sách phim mới cập nhật từ API riêng.
+                        updatedMovies = try {
+                            parseMovies(MovieService.api.list("phim-moi-cap-nhat", 1))
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                        homeMovies
+                    }
+                }
                 "Yêu thích" -> favoriteList
                 "Lịch sử" -> historyList
                 else -> parseMovies(MovieService.api.home())
@@ -967,10 +982,10 @@ fun VietStreamApp(
 
                             if (tab == "Trang chủ" && movies.isNotEmpty()) {
                                 item(key = "hero_banner") {
-                                    // Rotate through the first API results (the home feed's newest updates).
-                                    // A short delay and a small candidate set keep the carousel lightweight.
-                                    val heroCandidates = movies.take(8)
-                                    var heroIndex by remember(movies) { mutableIntStateOf(0) }
+                                    // Ưu tiên danh sách phim mới cập nhật; chỉ dự phòng khi API không có dữ liệu.
+                                    val heroSource = updatedMovies.ifEmpty { movies }
+                                    val heroCandidates = heroSource.take(8)
+                                    var heroIndex by remember(heroSource) { mutableIntStateOf(0) }
                                     LaunchedEffect(heroCandidates, tab) {
                                         if (heroCandidates.size > 1) {
                                             while (true) {
