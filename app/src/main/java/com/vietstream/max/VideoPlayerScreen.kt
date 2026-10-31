@@ -17,6 +17,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.HorizontalScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -314,6 +315,7 @@ class InAppPlayerActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         )
+        fullscreenExitButton.bringToFront()
         playerView.setOnClickListener { toggleCustomControls() }
         controlOverlay.setOnClickListener { toggleCustomControls() }
 
@@ -357,7 +359,15 @@ class InAppPlayerActivity : Activity() {
 
         root.addView(topBar)
         root.addView(playerContainer)
-        root.addView(controls)
+        val controlsScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = true
+            addView(controls, HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        root.addView(controlsScroll)
 
         setContentView(root)
 
