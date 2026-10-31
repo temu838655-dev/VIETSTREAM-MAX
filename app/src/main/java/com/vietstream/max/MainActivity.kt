@@ -1353,7 +1353,13 @@ private fun SettingsScreen(
         }
         Text("VLC cần được cài trên thiết bị; một số đường dẫn có yêu cầu xác thực có thể không phát được bên ngoài app.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
         val playbackPrefs = remember { settingsContext.getSharedPreferences("vietstream_settings", Context.MODE_PRIVATE) }
-        val audioSupport = remember(settingsContext) { AudioSupport.detect(settingsContext) }
+        val audioSupport = remember(settingsContext) {
+            try {
+                AudioSupport.detect(settingsContext)
+            } catch (_: Throwable) {
+                AudioSupport(false, false, false)
+            }
+        }
         var subtitleSize by remember { mutableIntStateOf(playbackPrefs.getInt("subtitle_size", 20)) }
         var subtitleColor by remember { mutableIntStateOf(playbackPrefs.getInt("subtitle_color", android.graphics.Color.WHITE)) }
         Spacer(Modifier.height(16.dp))
@@ -1481,8 +1487,30 @@ fun MovieCard(movie: Movie, favorite: Boolean = false, isTv: Boolean = false, on
             }
             if (favorite) Text("♥", color = MaterialTheme.colorScheme.primary, fontSize = 18.sp, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp))
         }
-        Spacer(Modifier.height(7.dp))
-        Text(movie.name, color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 16.sp else 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(movie.origin, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(
+            Modifier.fillMaxWidth()
+                .padding(top = 6.dp)
+                .clip(RoundedCornerShape(bottomStart = 10.dp, bottomEnd = 10.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f))
+                .padding(horizontal = 9.dp, vertical = 9.dp)
+        ) {
+            Text(
+                movie.name,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = if (isTv) 17.sp else 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = if (isTv) 21.sp else 18.sp
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                movie.origin,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
