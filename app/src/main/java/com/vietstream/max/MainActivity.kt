@@ -597,7 +597,9 @@ class MainActivity : ComponentActivity() {
             val darkTheme = when (appSettings.theme) {
                 AppSettings.THEME_LIGHT -> false
                 AppSettings.THEME_DARK -> true
-                else -> isSystemInDarkTheme()            }            val accent = Color(appSettings.accentArgb.toInt())
+                else -> isSystemInDarkTheme()
+            }
+            val accent = Color(appSettings.accentArgb.toInt())
             val scheme = if (darkTheme) {
                 darkColorScheme(primary = accent, secondary = accent, background = Black, surface = Panel, onBackground = White, onSurface = White)
             } else {
