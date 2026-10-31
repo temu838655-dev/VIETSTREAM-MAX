@@ -1113,7 +1113,7 @@ fun VietStreamApp(
                         Text(server.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 6.dp))
                         server.episodes.forEach { episode ->
                             Row(
-                                Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF292929))
+                                Modifier.fillMaxWidth().padding(vertical = 3.dp).liquidGlass(RoundedCornerShape(12.dp))
                                     .clickable {
                                         val videoUrl = episode.m3u8.trim()
                                         val embedUrl = episode.embed.trim()
@@ -1414,8 +1414,8 @@ private fun TvNavigationItem(text: String, selected: Boolean, onClick: () -> Uni
 fun MovieCard(movie: Movie, favorite: Boolean = false, isTv: Boolean = false, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-            .border(if (focused) 2.dp else 1.dp, if (focused) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(10.dp))
+        Modifier.fillMaxWidth().liquidGlass(RoundedCornerShape(16.dp))
+            .then(if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)) else Modifier)
             .onFocusChanged { focused = it.isFocused }.clickable(onClick = onClick).focusable()
     ) {
         Box {
