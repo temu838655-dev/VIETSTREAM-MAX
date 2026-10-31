@@ -33,7 +33,7 @@ object AppSettings {
         "vi", "en", "zh", "ja", "ko", "th", "id", "fr", "es"
     )
 
-    private const val DEFAULT_ACCENT = 0xFFE50914L
+    private const val DEFAULT_ACCENT = 0xFF2878F0L
 
     data class Settings(
         val theme: String = THEME_SYSTEM,
