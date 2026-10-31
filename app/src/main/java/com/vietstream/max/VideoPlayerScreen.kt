@@ -3,6 +3,7 @@ package com.vietstream.max
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Bundle
@@ -44,6 +45,7 @@ class InAppPlayerActivity : Activity() {
     private var restoredPosition = 0L
     private var finishedPlayback = false
     private var isFullscreen = false
+    private var originalRequestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -73,6 +75,7 @@ class InAppPlayerActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        originalRequestedOrientation = requestedOrientation
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableImmersiveMode()
 
@@ -360,6 +363,16 @@ class InAppPlayerActivity : Activity() {
         }
 
         isFullscreen = enabled
+
+        // Phones must rotate to landscape when fullscreen is requested.
+        // Android TV devices keep their existing orientation behavior.
+        if (!isTv) {
+            requestedOrientation = if (enabled) {
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            } else {
+                originalRequestedOrientation
+            }
+        }
 
         mainHandler.removeCallbacks(hideFullscreenControlsRunnable)
 
