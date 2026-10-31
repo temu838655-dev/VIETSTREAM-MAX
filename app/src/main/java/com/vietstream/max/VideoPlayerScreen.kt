@@ -20,12 +20,15 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.media3.common.C
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 
@@ -33,6 +36,7 @@ import androidx.media3.ui.PlayerView
 class InAppPlayerActivity : Activity() {
 
     private var player: ExoPlayer? = null
+    private var trackSelector: DefaultTrackSelector? = null
     private lateinit var playerView: PlayerView
     private lateinit var titleView: TextView
     private lateinit var topBar: LinearLayout
@@ -426,7 +430,34 @@ class InAppPlayerActivity : Activity() {
     }
 
     private fun initializePlayer() {
-        val exoPlayer = ExoPlayer.Builder(this).build()
+        val audioMode = settings.getString("app_audio", AppSettings.AUDIO_AUTO)
+            ?: AppSettings.AUDIO_AUTO
+        val selector = DefaultTrackSelector(this).apply {
+            parameters = buildUponParameters().apply {
+                when (audioMode) {
+                    AppSettings.AUDIO_STEREO -> setMaxAudioChannelCount(2)
+                    AppSettings.AUDIO_DOLBY -> setPreferredAudioMimeTypes(
+                        MimeTypes.AUDIO_E_AC3_JOC,
+                        MimeTypes.AUDIO_AC4,
+                        MimeTypes.AUDIO_E_AC3
+                    )
+                    AppSettings.AUDIO_SPATIAL -> setPreferredAudioMimeTypes(
+                        MimeTypes.AUDIO_E_AC3_JOC,
+                        MimeTypes.AUDIO_AC4,
+                        MimeTypes.AUDIO_E_AC3,
+                        MimeTypes.AUDIO_AC3,
+                        MimeTypes.AUDIO_AAC
+                    )
+                }
+            }.build()
+        }
+        trackSelector = selector
+        val exoPlayer = ExoPlayer.Builder(this)
+            .setTrackSelector(selector)
+            .build()
+
+        // Android handles Atmos passthrough/spatialization when source and output support it.
+        exoPlayer.setAudioAttributes(AudioAttributes.DEFAULT, true)
 
         player = exoPlayer
         playerView.player = exoPlayer
