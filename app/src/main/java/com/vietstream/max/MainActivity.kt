@@ -586,8 +586,13 @@ fun VietStreamApp(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var profiles by remember { mutableStateOf(readProfiles(context)) }
-    var activeProfile by remember { mutableStateOf<UserProfile?>(null) }
-    var needsProfilePicker by remember { mutableStateOf(true) }
+    var profilesEnabled by remember {
+        mutableStateOf(AppPreferences.getBoolean(context, AppPreferences.KEY_PROFILES_ENABLED, false))
+    }
+    var activeProfile by remember {
+        mutableStateOf<UserProfile?>(if (profilesEnabled) null else profiles.firstOrNull())
+    }
+    var needsProfilePicker by remember { mutableStateOf(profilesEnabled) }
     var managingProfiles by remember { mutableStateOf(false) }
     var pinTarget by remember { mutableStateOf<UserProfile?>(null) }
     var pinError by remember { mutableStateOf("") }
@@ -843,8 +848,10 @@ fun VietStreamApp(
                         Text("MAX", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
                     }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { needsProfilePicker = true; selected = null }) {
-                        Text("${profile?.avatar ?: "👤"} ${profile?.name ?: "Hồ sơ"}", color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                    if (profilesEnabled) {
+                        TextButton(onClick = { needsProfilePicker = true; selected = null }) {
+                            Text("${profile?.avatar ?: "👤"} ${profile?.name ?: "Hồ sơ"}", color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                        }
                     }
                     if (!isTv && profile?.isKids != true) {
                         TextButton(onClick = { tab = "Tìm kiếm" }) { Text("⌕", color = MaterialTheme.colorScheme.onSurface) }
@@ -855,6 +862,20 @@ fun VietStreamApp(
                     "Cài đặt" -> SettingsScreen(
                         isTv = isTv,
                         isKids = profile?.isKids == true,
+                        profilesEnabled = profilesEnabled,
+                        onProfilesEnabledChanged = { enabled ->
+                            profilesEnabled = enabled
+                            AppPreferences.setBoolean(context, AppPreferences.KEY_PROFILES_ENABLED, enabled)
+                            if (enabled) {
+                                activeProfile = null
+                                needsProfilePicker = true
+                            } else {
+                                activeProfile = profiles.firstOrNull()
+                                needsProfilePicker = false
+                                managingProfiles = false
+                                pinTarget = null
+                            }
+                        },
                         favoriteCount = favoriteList.size,
                         historyCount = historyList.size,
                         appSettings = appSettings,
@@ -1163,7 +1184,10 @@ private fun MovieFilters(
 
 @Composable
 private fun SettingsScreen(
-    isTv: Boolean, isKids: Boolean = false, favoriteCount: Int, historyCount: Int,
+    isTv: Boolean, isKids: Boolean = false,
+    profilesEnabled: Boolean,
+    onProfilesEnabledChanged: (Boolean) -> Unit,
+    favoriteCount: Int, historyCount: Int,
     appSettings: AppSettings.Settings,
     onSettingsChanged: () -> Unit,
     onNavigate: (String) -> Unit, onClearFavorites: () -> Unit, onClearHistory: () -> Unit
@@ -1176,6 +1200,20 @@ private fun SettingsScreen(
         Text("CÀI ĐẶT", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Text("Thiết lập ứng dụng", color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 30.sp else 24.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
         Text("VIETSTREAM MAX", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+
+        Spacer(Modifier.height(20.dp))
+        Text("HỒ SƠ NGƯỜI DÙNG", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surface).padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Bật tính năng hồ sơ", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                Text("Tắt: vào thẳng Trang chủ. Bật: chọn hồ sơ khi mở ứng dụng.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            }
+            Switch(checked = profilesEnabled, onCheckedChange = onProfilesEnabledChanged)
+        }
 
         Spacer(Modifier.height(22.dp))
         Text("GIAO DIỆN", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -1220,6 +1258,36 @@ private fun SettingsScreen(
             FilterChip(selected = appSettings.player == AppSettings.PLAYER_VLC, onClick = { AppSettings.savePlayer(settingsContext, AppSettings.PLAYER_VLC); onSettingsChanged() }, label = { Text("VLC") })
         }
         Text("VLC cần được cài trên thiết bị; một số đường dẫn có yêu cầu xác thực có thể không phát được bên ngoài app.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+        val playbackPrefs = remember { settingsContext.getSharedPreferences("vietstream_settings", Context.MODE_PRIVATE) }
+        var subtitleSize by remember { mutableIntStateOf(playbackPrefs.getInt("subtitle_size", 20)) }
+        var subtitleColor by remember { mutableIntStateOf(playbackPrefs.getInt("subtitle_color", android.graphics.Color.WHITE)) }
+        Spacer(Modifier.height(16.dp))
+        Text("PHỤ ĐỀ", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Cỡ chữ", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(14, 16, 18, 20, 24, 28, 32).forEach { size ->
+                FilterChip(selected = subtitleSize == size, onClick = {
+                    subtitleSize = size
+                    playbackPrefs.edit().putInt("subtitle_size", size).apply()
+                }, label = { Text("${size}sp") })
+            }
+        }
+        Text("Màu chữ", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp))
+        val subtitleColors = listOf(
+            "Trắng" to android.graphics.Color.WHITE, "Vàng" to android.graphics.Color.YELLOW,
+            "Xanh lá" to android.graphics.Color.GREEN, "Xanh ngọc" to android.graphics.Color.CYAN,
+            "Đỏ" to android.graphics.Color.RED, "Hồng tím" to android.graphics.Color.MAGENTA
+        )
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            subtitleColors.forEach { (label, color) ->
+                FilterChip(selected = subtitleColor == color, onClick = {
+                    subtitleColor = color
+                    playbackPrefs.edit().putInt("subtitle_color", color).apply()
+                }, label = { Text(label, fontSize = 11.sp) })
+            }
+        }
+        Text("Áp dụng cho track phụ đề rời được trình phát tích hợp giải mã. Phụ đề cháy sẵn trong hình hoặc phát qua trang nhúng không thể đổi kiểu chữ.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
+
         Text("Ưu tiên âm thanh", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(AppSettings.AUDIO_AUTO to "Tự động", AppSettings.AUDIO_STEREO to "Stereo", AppSettings.AUDIO_DOLBY to "Dolby Atmos").forEach { (value, label) ->
