@@ -27,6 +27,7 @@ object AppSettings {
     const val AUDIO_AUTO = "auto"
     const val AUDIO_STEREO = "stereo"
     const val AUDIO_DOLBY = "dolby"
+    const val AUDIO_SPATIAL = "spatial"
 
     private val supportedLanguages = setOf(
         "vi", "en", "zh", "ja", "ko", "th", "id", "fr", "es"
@@ -69,7 +70,7 @@ object AppSettings {
         val audioMode = prefs.getString(KEY_AUDIO, AUDIO_AUTO)
             .orDefault(AUDIO_AUTO)
             .takeIf {
-                it in setOf(AUDIO_AUTO, AUDIO_STEREO, AUDIO_DOLBY)
+                it in setOf(AUDIO_AUTO, AUDIO_STEREO, AUDIO_DOLBY, AUDIO_SPATIAL)
             } ?: AUDIO_AUTO
 
         return Settings(
@@ -112,7 +113,7 @@ object AppSettings {
     }
 
     fun saveAudioMode(context: Context, value: String) {
-        if (value !in setOf(AUDIO_AUTO, AUDIO_STEREO, AUDIO_DOLBY)) return
+        if (value !in setOf(AUDIO_AUTO, AUDIO_STEREO, AUDIO_DOLBY, AUDIO_SPATIAL)) return
 
         prefs(context).edit()
             .putString(KEY_AUDIO, value)
