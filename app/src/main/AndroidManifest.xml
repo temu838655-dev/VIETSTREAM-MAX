@@ -16,7 +16,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="VIETSTREAM MAX"
+        android:label="Bo Phim"
         android:icon="@drawable/ic_vietstream_logo"
         android:roundIcon="@drawable/ic_vietstream_logo"
         android:usesCleartextTraffic="false"
