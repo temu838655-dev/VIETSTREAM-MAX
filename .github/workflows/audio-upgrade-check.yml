@@ -1,4 +1,4 @@
-name: VIETSTREAM MAX Audio Upgrade Build Check
+name: Bo Phim Release APK
 
 on:
   push:
@@ -10,12 +10,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: vietstream-max-audio-build
+  group: bo-phim-release-build
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Compile audio integration
+    name: Build Bo Phim Release
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -30,12 +30,35 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Build Debug APK
-        run: gradle --no-daemon :app:assembleDebug --stacktrace
-      - name: Upload build APK
+      - name: Prepare permanent release signing key
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          for name in RELEASE_KEYSTORE_BASE64 RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub Actions secret: $name. Add the permanent release signing secrets before building."
+              exit 1
+            fi
+          done
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > app/release-keystore.jks
+          test -s app/release-keystore.jks
+      - name: Build Release APK only
+        run: gradle --no-daemon :app:assembleRelease --stacktrace
+      - name: Prepare Release APK
+        run: |
+          test -s app/build/outputs/apk/release/app-release.apk
+          mkdir -p release
+          cp app/build/outputs/apk/release/app-release.apk release/Bo-Phim.apk
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: VIETSTREAM-MAX-audio-upgrade-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Bo-Phim-Release
+          path: release/Bo-Phim.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
+      - name: Remove temporary keystore
+        if: always()
+        run: rm -f app/release-keystore.jks
