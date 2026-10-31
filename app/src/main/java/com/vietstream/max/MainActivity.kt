@@ -597,8 +597,7 @@ class MainActivity : ComponentActivity() {
             val darkTheme = when (appSettings.theme) {
                 AppSettings.THEME_LIGHT -> false
                 AppSettings.THEME_DARK -> true
-                else -> isSystemInDarkTheme()            }
-            val accent = Color(appSettings.accentArgb.toInt())
+                else -> isSystemInDarkTheme()            }            val accent = Color(appSettings.accentArgb.toInt())
             val scheme = if (darkTheme) {
                 darkColorScheme(primary = accent, secondary = accent, background = Black, surface = Panel, onBackground = White, onSurface = White)
             } else {
@@ -1148,6 +1147,7 @@ fun VietStreamApp(
             }
         }
     }
+    }
 
     selected?.let { movie ->
         AlertDialog(
@@ -1197,8 +1197,7 @@ fun VietStreamApp(
                     episodeServers.forEach { server ->
                         Text(server.name, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 6.dp))
                         server.episodes.forEach { episode ->
-                            Row(
-                                Modifier.fillMaxWidth().padding(vertical = 3.dp).liquidGlass(RoundedCornerShape(12.dp))
+                            Row(                                Modifier.fillMaxWidth().padding(vertical = 3.dp).liquidGlass(RoundedCornerShape(12.dp))
                                     .clickable {
                                         val videoUrl = episode.m3u8.trim()
                                         val embedUrl = episode.embed.trim()
