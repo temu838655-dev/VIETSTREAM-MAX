@@ -26,7 +26,7 @@ data class AudioSupport(
             val atmos = try {
                 AudioCapabilities.getCapabilities(context)
                     .supportsEncoding(C.ENCODING_E_AC3_JOC)
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 false
             }
 
@@ -39,9 +39,9 @@ data class AudioSupport(
             }
 
             val spatializer = try {
-                (context.getSystemService(Context.AUDIO_SERVICE) as AudioManager)
-                    .spatializer
-            } catch (_: Exception) {
+                (context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager)
+                    ?.spatializer
+            } catch (_: Throwable) {
                 null
             }
 
