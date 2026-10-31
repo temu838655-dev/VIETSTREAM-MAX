@@ -445,7 +445,14 @@ class InAppPlayerActivity : Activity() {
                     "Tập ${index + 1}"
                 }
 
+                applySubtitleStyle()
                 saveProgress()
+            }
+
+            // HLS subtitle tracks may arrive after playback preparation.
+            // Re-apply the user's saved appearance when Media3 publishes tracks.
+            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                applySubtitleStyle()
             }
 
             override fun onPlayerError(error: PlaybackException) {
