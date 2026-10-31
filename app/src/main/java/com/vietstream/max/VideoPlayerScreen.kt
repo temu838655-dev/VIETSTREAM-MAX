@@ -300,7 +300,9 @@ class InAppPlayerActivity : Activity() {
 
         val buttonLabels = listOf(
             "Tập trước",
+            "Danh sách tập",
             "Tốc độ",
+            "Âm thanh",
             "Phụ đề",
             "Kiểu chữ",
             "Tập tiếp"
@@ -308,7 +310,9 @@ class InAppPlayerActivity : Activity() {
 
         val actions = listOf<() -> Unit>(
             { previousEpisode() },
+            { showEpisodeList() },
             { showSpeedOptions() },
+            { showAudioTrackOptions() },
             { showSubtitleOptions() },
             { showSubtitleStyleOptions() },
             { nextEpisode() }
@@ -536,6 +540,75 @@ class InAppPlayerActivity : Activity() {
 
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
+    }
+
+    private fun showEpisodeList() {
+        if (titles.isEmpty()) return
+        val current = player?.currentMediaItemIndex ?: startIndex
+        AlertDialog.Builder(this)
+            .setTitle("Danh sách tập")
+            .setSingleChoiceItems(titles.toTypedArray(), current) { dialog, which ->
+                val exoPlayer = player
+                if (exoPlayer != null && which in urls.indices) {
+                    finishedPlayback = false
+                    exoPlayer.seekTo(which, 0L)
+                    exoPlayer.play()
+                    titleView.text = titles[which]
+                    saveProgress()
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Đóng", null)
+            .show()
+    }
+
+    private fun showAudioTrackOptions() {
+        val exoPlayer = player ?: return
+        val audioGroups = exoPlayer.currentTracks.groups.filter {
+            it.type == C.TRACK_TYPE_AUDIO
+        }
+        val options = mutableListOf("Tự động")
+        val selections = mutableListOf<Pair<Int, Int>>()
+
+        audioGroups.forEachIndexed { groupIndex, group ->
+            for (trackIndex in 0 until group.length) {
+                val format = group.getTrackFormat(trackIndex)
+                val language = format.language ?: "Không rõ ngôn ngữ"
+                val label = format.label ?: "Âm thanh ${trackIndex + 1}"
+                options.add("$language - $label")
+                selections.add(groupIndex to trackIndex)
+            }
+        }
+
+        if (options.size == 1) {
+            Toast.makeText(
+                this,
+                "Nguồn phim không có lựa chọn âm thanh khác",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Âm thanh")
+            .setItems(options.toTypedArray()) { _, which ->
+                val builder = exoPlayer.trackSelectionParameters.buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+
+                if (which > 0) {
+                    val (groupIndex, trackIndex) = selections[which - 1]
+                    builder.addOverride(
+                        TrackSelectionOverride(
+                            audioGroups[groupIndex].mediaTrackGroup,
+                            listOf(trackIndex)
+                        )
+                    )
+                }
+                exoPlayer.trackSelectionParameters = builder.build()
+            }
+            .setNegativeButton("Đóng", null)
+            .show()
     }
 
     private fun showSpeedOptions() {
