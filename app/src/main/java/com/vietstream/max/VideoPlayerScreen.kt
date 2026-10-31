@@ -17,6 +17,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.media3.common.C
@@ -42,6 +43,12 @@ class InAppPlayerActivity : Activity() {
     private lateinit var topBar: LinearLayout
     private lateinit var controls: LinearLayout
     private lateinit var fullscreenExitButton: Button
+    private lateinit var controlOverlay: FrameLayout
+    private lateinit var progressBar: SeekBar
+    private lateinit var positionLabel: TextView
+    private lateinit var durationLabel: TextView
+    private lateinit var playPauseButton: Button
+    private var userSeeking = false
 
     private var titles = arrayListOf<String>()
     private var urls = arrayListOf<String>()
@@ -58,8 +65,24 @@ class InAppPlayerActivity : Activity() {
             ::playerView.isInitialized &&
             player?.isPlaying == true
         ) {
-            playerView.hideController()
+            controlOverlay.visibility = View.GONE
             fullscreenExitButton.visibility = View.GONE
+        }
+    }
+
+    private val updateProgressRunnable = object : Runnable {
+        override fun run() {
+            val exoPlayer = player
+            if (exoPlayer != null && ::progressBar.isInitialized) {
+                val duration = exoPlayer.duration.coerceAtLeast(0L)
+                val position = exoPlayer.currentPosition.coerceAtLeast(0L)
+                progressBar.max = duration.coerceAtMost(Int.MAX_VALUE.toLong()).toInt().coerceAtLeast(1)
+                if (!userSeeking) progressBar.progress = position.coerceAtMost(progressBar.max.toLong()).toInt()
+                positionLabel.text = formatTime(position)
+                durationLabel.text = formatTime(duration)
+                if (::playPauseButton.isInitialized) playPauseButton.text = if (exoPlayer.isPlaying) "Ⅱ" else "▶"
+            }
+            mainHandler.postDelayed(this, 500L)
         }
     }
 
@@ -236,10 +259,7 @@ class InAppPlayerActivity : Activity() {
         topBar.addView(fullscreenButton)
 
         playerView = PlayerView(this).apply {
-            useController = true
-            controllerAutoShow = true
-            controllerShowTimeoutMs = 3500
-            controllerHideOnTouch = true
+            useController = false
             setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
             setBackgroundColor(Color.BLACK)
             isFocusable = true
@@ -285,6 +305,17 @@ class InAppPlayerActivity : Activity() {
         }
 
         playerContainer.addView(fullscreenExitButton)
+
+        controlOverlay = buildCustomControls()
+        playerContainer.addView(
+            controlOverlay,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
+        playerView.setOnClickListener { toggleCustomControls() }
+        controlOverlay.setOnClickListener { toggleCustomControls() }
 
         controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -346,7 +377,80 @@ class InAppPlayerActivity : Activity() {
             }
         )
 
+        mainHandler.post(updateProgressRunnable)
         playerView.requestFocus()
+    }
+
+    private fun buildCustomControls(): FrameLayout {
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isFocusable = false
+        }
+        val center = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        fun controlButton(label: String, action: () -> Unit): Button = Button(this).apply {
+            text = label
+            textSize = if (isTv) 24f else 20f
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.argb(190, 18, 18, 18)); cornerRadius = 48f
+            }
+            setOnClickListener { action() }
+            layoutParams = LinearLayout.LayoutParams(if (isTv) 76 else 60, if (isTv) 64 else 54).apply { marginStart = 10; marginEnd = 10 }
+        }
+        center.addView(controlButton("−10", { player?.seekBack() }))
+        playPauseButton = controlButton("▶", {
+            player?.let { if (it.isPlaying) it.pause() else it.play() }
+        })
+        center.addView(playPauseButton)
+        center.addView(controlButton("+10", { player?.seekForward() }))
+        overlay.addView(center, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+
+        val bottom = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 8, 18, 12)
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.TRANSPARENT, Color.argb(225, 0, 0, 0))
+            )
+        }
+        val times = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        positionLabel = TextView(this).apply { text = "00:00"; setTextColor(Color.WHITE); textSize = 12f }
+        durationLabel = TextView(this).apply { text = "00:00"; setTextColor(Color.WHITE); textSize = 12f; gravity = Gravity.END }
+        progressBar = SeekBar(this).apply {
+            max = 1
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onStartTrackingTouch(seekBar: SeekBar) { userSeeking = true }
+                override fun onStopTrackingTouch(seekBar: SeekBar) { player?.seekTo(seekBar.progress.toLong()); userSeeking = false }
+                override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                    if (fromUser) positionLabel.text = formatTime(progress.toLong())
+                }
+            })
+        }
+        times.addView(positionLabel)
+        times.addView(progressBar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        times.addView(durationLabel)
+        bottom.addView(times)
+        overlay.addView(bottom, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        return overlay
+    }
+
+    private fun formatTime(milliseconds: Long): String {
+        val total = (milliseconds / 1000L).coerceAtLeast(0L)
+        val hours = total / 3600L
+        val minutes = (total % 3600L) / 60L
+        val seconds = total % 60L
+        return if (hours > 0) String.format(java.util.Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
+        else String.format(java.util.Locale.getDefault(), "%02d:%02d", minutes, seconds)
+    }
+
+    private fun toggleCustomControls() {
+        if (!::controlOverlay.isInitialized) return
+        controlOverlay.visibility = if (controlOverlay.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        if (isFullscreen && controlOverlay.visibility == View.VISIBLE) scheduleFullscreenControlsHide()
     }
 
     private fun scheduleFullscreenControlsHide() {
@@ -389,11 +493,11 @@ class InAppPlayerActivity : Activity() {
 
         if (enabled) {
             fullscreenExitButton.visibility = View.VISIBLE
-            playerView.showController()
+            controlOverlay.visibility = View.VISIBLE
             scheduleFullscreenControlsHide()
         } else {
             fullscreenExitButton.visibility = View.GONE
-            playerView.hideController()
+            controlOverlay.visibility = View.VISIBLE
 
             titleView.text = titles.getOrElse(
                 player?.currentMediaItemIndex ?: startIndex
@@ -530,7 +634,7 @@ class InAppPlayerActivity : Activity() {
                     mainHandler.removeCallbacks(
                         hideFullscreenControlsRunnable
                     )
-                    playerView.showController()
+                    controlOverlay.visibility = View.VISIBLE
                     fullscreenExitButton.visibility = View.VISIBLE
                 } else if (isPlaying && isFullscreen) {
                     scheduleFullscreenControlsHide()
