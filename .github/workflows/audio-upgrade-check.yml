@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build Bo Phim Release
+    name: Build Bo Phim Release APK
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -30,22 +30,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Prepare permanent release signing key
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: |
-          for name in RELEASE_KEYSTORE_BASE64 RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
-            if [ -z "${!name}" ]; then
-              echo "::error::Missing GitHub Actions secret: $name. Add the permanent release signing secrets before building."
-              exit 1
-            fi
-          done
-          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > app/release-keystore.jks
-          test -s app/release-keystore.jks
-      - name: Build Release APK only
+      - name: Build Release APK
         run: gradle --no-daemon :app:assembleRelease --stacktrace
       - name: Prepare Release APK
         run: |
@@ -59,6 +44,3 @@ jobs:
           path: release/Bo-Phim.apk
           if-no-files-found: error
           retention-days: 30
-      - name: Remove temporary keystore
-        if: always()
-        run: rm -f app/release-keystore.jks
