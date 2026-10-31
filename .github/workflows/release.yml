@@ -1,4 +1,4 @@
-name: VIETSTREAM MAX APK Build
+name: Bo Phim Official Release
 
 on:
   workflow_dispatch:
@@ -12,76 +12,58 @@ permissions:
   contents: write
 
 concurrency:
-  group: vietstream-max-build
+  group: bo-phim-official-release
   cancel-in-progress: false
 
 jobs:
   build:
-    name: Build VIETSTREAM MAX
+    name: Build Bo Phim Release
     runs-on: ubuntu-latest
     timeout-minutes: 40
-
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-
       - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-
-      - name: Check build environment
+      - name: Prepare permanent release signing key
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          java -version
-          gradle --version
-
-          if [ -z "$ANDROID_HOME" ]; then
-            echo "ANDROID_HOME is not configured."
-            exit 1
-          fi
-
-          echo "Android SDK: $ANDROID_HOME"
-          ls "$ANDROID_HOME"
-
-      - name: Build Debug APK
-        run: gradle --no-daemon :app:assembleDebug --stacktrace
-
-      - name: Build Release APK
+          for name in RELEASE_KEYSTORE_BASE64 RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub Actions secret: $name. Add the permanent release signing secrets first."
+              exit 1
+            fi
+          done
+          echo "$RELEASE_KEYSTORE_BASE64" | base64 --decode > app/release-keystore.jks
+          test -s app/release-keystore.jks
+      - name: Build Release APK only
         run: gradle --no-daemon :app:assembleRelease --stacktrace
-
-      - name: Verify APK files
+      - name: Prepare Release APK
         run: |
-          test -s app/build/outputs/apk/debug/app-debug.apk
           test -s app/build/outputs/apk/release/app-release.apk
-
-      - name: Prepare APK files
-        run: |
           mkdir -p release
-          cp app/build/outputs/apk/debug/app-debug.apk release/VIETSTREAM-MAX-debug.apk
-          cp app/build/outputs/apk/release/app-release.apk release/VIETSTREAM-MAX.apk
-          ls -lh release/
-
-      - name: Upload APK artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: VIETSTREAM-MAX-APK
-          path: release/*.apk
-          if-no-files-found: error
-          retention-days: 30
-
+          cp app/build/outputs/apk/release/app-release.apk release/Bo-Phim.apk
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
-          name: VIETSTREAM MAX ${{ inputs.release_tag }}
+          name: Bo Phim ${{ inputs.release_tag }}
           generate_release_notes: true
-          files: release/*.apk
+          files: release/Bo-Phim.apk
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Remove temporary keystore
+        if: always()
+        run: rm -f app/release-keystore.jks
