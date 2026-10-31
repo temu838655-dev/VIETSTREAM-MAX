@@ -758,6 +758,11 @@ class InAppPlayerActivity : Activity() {
             .apply()
     }
 
+    override fun onResume() {
+        super.onResume()
+        applySubtitleStyle()
+    }
+
     override fun onPause() {
         saveProgress()
         player?.pause()
