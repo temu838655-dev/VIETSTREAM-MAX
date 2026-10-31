@@ -184,7 +184,7 @@ class InAppPlayerActivity : Activity() {
                 if (isTv) 12 else 4,
                 4
             )
-            setBackgroundColor(Color.rgb(20, 20, 20))
+            setBackgroundColor(Color.argb(220, 8, 8, 8))
         }
 
         val backButton = Button(this).apply {
@@ -238,8 +238,8 @@ class InAppPlayerActivity : Activity() {
         playerView = PlayerView(this).apply {
             useController = true
             controllerAutoShow = true
-            controllerShowTimeoutMs = 1000
-            controllerHideOnTouch = !isTv
+            controllerShowTimeoutMs = 3500
+            controllerHideOnTouch = true
             setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
             setBackgroundColor(Color.BLACK)
             isFocusable = true
@@ -295,7 +295,7 @@ class InAppPlayerActivity : Activity() {
                 if (isTv) 16 else 3,
                 if (isTv) 12 else 5
             )
-            setBackgroundColor(Color.rgb(15, 15, 15))
+            setBackgroundColor(Color.argb(235, 8, 8, 8))
         }
 
         val buttonLabels = listOf(
@@ -407,12 +407,19 @@ class InAppPlayerActivity : Activity() {
     ): Button {
         return Button(this).apply {
             text = label
-            textSize = if (isTv) 15f else 9f
+            textSize = if (isTv) 14f else 9f
+            setTextColor(Color.WHITE)
+            isAllCaps = false
             isFocusable = true
             isFocusableInTouchMode = true
             minHeight = if (isTv) 64 else 44
             minWidth = 0
-            setPadding(2, 0, 2, 0)
+            setPadding(4, 0, 4, 0)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.argb(185, 48, 48, 48))
+                cornerRadius = 18f
+                setStroke(1, Color.argb(70, 255, 255, 255))
+            }
 
             setOnClickListener {
                 action()
