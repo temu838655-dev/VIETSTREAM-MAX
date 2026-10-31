@@ -108,7 +108,7 @@ class InAppPlayerActivity : Activity() {
         enableImmersiveMode()
 
         val singleTitle =
-            intent.getStringExtra("video_title") ?: "VIETSTREAM MAX"
+            intent.getStringExtra("video_title") ?: "Bo Phim"
 
         val singleUrl =
             intent.getStringExtra("video_url").orEmpty()
@@ -228,7 +228,7 @@ class InAppPlayerActivity : Activity() {
         }
 
         titleView = TextView(this).apply {
-            text = titles.getOrElse(startIndex) { "VIETSTREAM MAX" }
+            text = titles.getOrElse(startIndex) { "Bo Phim" }
             textSize = if (isTv) 22f else 15f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER_VERTICAL
@@ -528,7 +528,7 @@ class InAppPlayerActivity : Activity() {
             titleView.text = titles.getOrElse(
                 player?.currentMediaItemIndex ?: startIndex
             ) {
-                "VIETSTREAM MAX"
+                "Bo Phim"
             }
 
             playerView.requestFocus()
@@ -1043,7 +1043,7 @@ class InAppPlayerActivity : Activity() {
         preferences.edit()
             .putString(
                 "last_title",
-                titles.getOrElse(index) { "VIETSTREAM MAX" }
+                titles.getOrElse(index) { "Bo Phim" }
             )
             .putString("last_url", urls[index])
             .putInt("last_index", index)
