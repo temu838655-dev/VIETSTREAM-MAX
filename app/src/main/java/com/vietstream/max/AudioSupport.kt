@@ -5,12 +5,14 @@ import android.media.AudioManager
 import android.os.Build
 import androidx.media3.common.C
 import androidx.media3.exoplayer.audio.AudioCapabilities
+import androidx.media3.common.util.UnstableApi
 
 /**
  * Reports capabilities actually exposed by the Android device/audio route.
  * Atmos and Android spatialization are device/output capabilities, not software
  * effects that the app can force on.
  */
+@UnstableApi
 data class AudioSupport(
     val dolbyAtmos: Boolean,
     val spatializerAvailable: Boolean,
