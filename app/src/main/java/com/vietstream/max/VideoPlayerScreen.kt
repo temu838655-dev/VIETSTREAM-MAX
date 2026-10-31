@@ -467,7 +467,7 @@ class InAppPlayerActivity : Activity() {
     private fun setFullscreen(enabled: Boolean) {
         if (isFullscreen == enabled) {
             if (enabled) {
-                playerView.showController()
+                controlOverlay.visibility = View.VISIBLE
                 fullscreenExitButton.visibility = View.VISIBLE
                 scheduleFullscreenControlsHide()
             }
