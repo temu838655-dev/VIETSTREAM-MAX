@@ -1002,7 +1002,14 @@ fun VietStreamApp(
                                     OutlinedTextField(
                                         value = keyword,
                                         onValueChange = { keyword = it },
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = BoBlue,
+                                            unfocusedBorderColor = Color.White.copy(alpha = 0.18f),
+                                            focusedContainerColor = Color(0xFF111827),
+                                            unfocusedContainerColor = Color(0xFF111827)
+                                        ),
                                         singleLine = true,
                                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                         keyboardActions = KeyboardActions(onSearch = { runSearch() }),
