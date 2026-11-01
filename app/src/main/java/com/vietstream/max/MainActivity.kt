@@ -749,10 +749,21 @@ fun VietStreamApp(
         loading = true
         error = ""
         try {
+            suspend fun loadPages(type: String, pages: Int = 5): List<Movie> {
+                val combined = mutableListOf<Movie>()
+                for (page in 1..pages) {
+                    val batch = parseMovies(MovieService.api.list(type, page))
+                    if (batch.isEmpty()) break
+                    combined += batch
+                    if (batch.size < 10) break
+                }
+                return combined.distinctBy { it.slug }
+            }
+
             movies = when (section) {
-                "Phim lẻ" -> parseMovies(MovieService.api.list("phim-le"))
-                "Phim bộ" -> parseMovies(MovieService.api.list("phim-bo"))
-                "Hoạt hình" -> parseMovies(MovieService.api.list("hoat-hinh"))
+                "Phim lẻ" -> loadPages("phim-le")
+                "Phim bộ" -> loadPages("phim-bo")
+                "Hoạt hình" -> loadPages("hoat-hinh")
                 "Trang chủ" -> {
                     if (profile?.isKids == true) {
                         updatedMovies = emptyList()
@@ -761,11 +772,11 @@ fun VietStreamApp(
                         val homeMovies = parseMovies(MovieService.api.home())
                         // Lấy đúng danh sách phim mới cập nhật từ API riêng.
                         updatedMovies = try {
-                            parseMovies(MovieService.api.list("phim-moi-cap-nhat", 1))
+                            loadPages("phim-moi-cap-nhat")
                         } catch (_: Exception) {
                             emptyList()
                         }
-                        homeMovies
+                        (homeMovies + updatedMovies).distinctBy { it.slug }
                     }
                 }
                 "Yêu thích" -> favoriteList
