@@ -3,9 +3,11 @@ package com.vietstream.max
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
