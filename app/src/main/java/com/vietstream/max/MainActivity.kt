@@ -1040,15 +1040,15 @@ fun VietStreamApp(
                                     ) {
                                         Crossfade(targetState = hero, label = "home_hero_carousel") { currentHero ->
                                             Box(
-                                                Modifier.fillMaxWidth().height(if (isTv) 360.dp else 270.dp)
-                                                    .liquidGlass(RoundedCornerShape(20.dp))
+                                                Modifier.fillMaxWidth().height(if (isTv) 420.dp else 320.dp)
+                                                    .liquidGlass(RoundedCornerShape(24.dp))
                                                     .clickable { selected = currentHero }
                                             ) {
                                                 MoviePoster(currentHero.poster, currentHero.name, Modifier.fillMaxSize())
                                                 Box(Modifier.fillMaxSize().background(
                                                     Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.96f)))
                                                 ))
-                                                Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+                                                Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 20.dp, vertical = 22.dp)) {
                                                     Text("BO PHIM  •  ĐỀ XUẤT MỚI", color = BoOrange, fontSize = 10.sp, fontWeight = FontWeight.Black)
                                                     Text(currentHero.name, color = Color.White, fontSize = if (isTv) 30.sp else 22.sp, fontWeight = FontWeight.Black, maxLines = 2)
                                                     Text("${currentHero.year} • ${currentHero.origin}", color = Color.White.copy(alpha = 0.82f), fontSize = 11.sp)
