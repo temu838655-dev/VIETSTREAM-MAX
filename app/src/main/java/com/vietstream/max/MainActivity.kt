@@ -1331,7 +1331,25 @@ private fun MovieFilterRow(title: String, options: List<String>, selected: Strin
         Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp, bottom = 4.dp))
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             options.forEach { option ->
-                FilterChip(selected = selected == option, onClick = { onSelect(option) }, label = { Text(option, fontSize = 13.sp, maxLines = 1) })
+                FilterChip(
+                    selected = selected == option,
+                    onClick = { onSelect(option) },
+                    label = { Text(option, fontSize = 13.sp, maxLines = 1) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = BoBlue.copy(alpha = 0.24f),
+                        selectedLabelColor = Color.White,
+                        containerColor = Color(0xFF111827),
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = selected == option,
+                        borderColor = Color.White.copy(alpha = 0.12f),
+                        selectedBorderColor = BoOrange,
+                        borderWidth = 1.dp,
+                        selectedBorderWidth = 1.dp
+                    )
+                )
             }
         }
     }
