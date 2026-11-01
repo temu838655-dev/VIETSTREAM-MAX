@@ -624,7 +624,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val isTv = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
         setContent {
+            var updateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
             var appSettings by remember { mutableStateOf(AppSettings.read(this@MainActivity)) }
+            LaunchedEffect(Unit) {
+                updateInfo = UpdateChecker.check(this@MainActivity)
+            }
             val darkTheme = when (appSettings.theme) {
                 AppSettings.THEME_LIGHT -> false
                 AppSettings.THEME_DARK -> true
@@ -642,6 +646,28 @@ class MainActivity : ComponentActivity() {
                     appSettings = appSettings,
                     onSettingsChanged = { appSettings = AppSettings.read(this@MainActivity) }
                 )
+                updateInfo?.let { update ->
+                    AlertDialog(
+                        onDismissRequest = { updateInfo = null },
+                        title = { Text("Có bản cập nhật Bo Phim") },
+                        text = {
+                            Text("Phiên bản ${update.versionName} đã sẵn sàng. Bạn có thể tải APK mới và cài đặt để cập nhật ứng dụng.")
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                updateInfo = null
+                                try {
+                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.apkUrl)))
+                                } catch (_: Exception) {
+                                    Toast.makeText(this@MainActivity, "Không mở được liên kết tải APK.", Toast.LENGTH_SHORT).show()
+                                }
+                            }) { Text("Tải bản mới") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { updateInfo = null }) { Text("Để sau") }
+                        }
+                    )
+                }
             }
         }
     }
