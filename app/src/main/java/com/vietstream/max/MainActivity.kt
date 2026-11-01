@@ -899,7 +899,7 @@ fun VietStreamApp(
                                         "Hoạt hình" -> "★"
                                         else -> "⚙"
                                     },
-                                    color = if (tab == item) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = if (tab == item) BoOrange else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 24.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -908,7 +908,7 @@ fun VietStreamApp(
                             colors = NavigationBarItemDefaults.colors(
                                 selectedTextColor = MaterialTheme.colorScheme.onSurface,
                                 unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                indicatorColor = Color(0xFF382020)
+                                indicatorColor = BoBlue.copy(alpha = 0.22f)
                             )
                         )
                     }
