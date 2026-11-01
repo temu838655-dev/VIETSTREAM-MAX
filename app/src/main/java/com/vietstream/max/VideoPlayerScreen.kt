@@ -596,7 +596,7 @@ class InAppPlayerActivity : Activity() {
             .build()
 
         // Bind insert effects only to this player's audio session, never the global output mix.
-        playerAudioSessionId = ExoPlayer.generateAudioSessionId(this)
+        playerAudioSessionId = (getSystemService(Context.AUDIO_SERVICE) as AudioManager).generateAudioSessionId()
         exoPlayer.setAudioSessionId(playerAudioSessionId)
 
         // Android handles native Atmos passthrough/spatialization when source and output support it.
