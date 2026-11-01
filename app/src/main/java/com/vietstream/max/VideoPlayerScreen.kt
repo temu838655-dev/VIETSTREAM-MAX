@@ -39,6 +39,8 @@ class InAppPlayerActivity : Activity() {
 
     private var player: ExoPlayer? = null
     private var trackSelector: DefaultTrackSelector? = null
+    private val audioVirtualizer = AudioVirtualizerController()
+    private var playerAudioSessionId = 0
     private lateinit var playerView: PlayerView
     private lateinit var titleView: TextView
     private lateinit var topBar: LinearLayout
@@ -577,18 +579,14 @@ class InAppPlayerActivity : Activity() {
             parameters = buildUponParameters().apply {
                 when (audioMode) {
                     AppSettings.AUDIO_STEREO -> setMaxAudioChannelCount(2)
-                    AppSettings.AUDIO_DOLBY -> setPreferredAudioMimeTypes(
-                        MimeTypes.AUDIO_E_AC3_JOC,
-                        MimeTypes.AUDIO_AC4,
-                        MimeTypes.AUDIO_E_AC3
-                    )
-                    AppSettings.AUDIO_SPATIAL -> setPreferredAudioMimeTypes(
-                        MimeTypes.AUDIO_E_AC3_JOC,
-                        MimeTypes.AUDIO_AC4,
-                        MimeTypes.AUDIO_E_AC3,
-                        MimeTypes.AUDIO_AC3,
-                        MimeTypes.AUDIO_AAC
-                    )
+                    AppSettings.AUDIO_DOLBY, AppSettings.AUDIO_SPATIAL, AppSettings.AUDIO_AUTO ->
+                        setPreferredAudioMimeTypes(
+                            MimeTypes.AUDIO_E_AC3_JOC,
+                            MimeTypes.AUDIO_AC4,
+                            MimeTypes.AUDIO_E_AC3,
+                            MimeTypes.AUDIO_AC3,
+                            MimeTypes.AUDIO_AAC
+                        )
                 }
             }.build()
         }
@@ -597,7 +595,11 @@ class InAppPlayerActivity : Activity() {
             .setTrackSelector(selector)
             .build()
 
-        // Android handles Atmos passthrough/spatialization when source and output support it.
+        // Bind insert effects only to this player's audio session, never the global output mix.
+        playerAudioSessionId = ExoPlayer.generateAudioSessionId(this)
+        exoPlayer.setAudioSessionId(playerAudioSessionId)
+
+        // Android handles native Atmos passthrough/spatialization when source and output support it.
         exoPlayer.setAudioAttributes(AudioAttributes.DEFAULT, true)
 
         player = exoPlayer
@@ -638,6 +640,7 @@ class InAppPlayerActivity : Activity() {
             // Re-apply the user's saved appearance when Media3 publishes tracks.
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
                 applySubtitleStyle()
+                applyAudioProcessingForSelectedTrack(tracks)
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -725,15 +728,48 @@ class InAppPlayerActivity : Activity() {
                         }
                     }
                 }.build()
+                player?.currentTracks?.let(::applyAudioProcessingForSelectedTrack)
                 Toast.makeText(this, when (mode) {
-                    AppSettings.AUDIO_DOLBY -> if (support.dolbyAtmos) "Đã ưu tiên track Dolby; cần nguồn Atmos và thiết bị tương thích." else "Thiết bị chưa báo hỗ trợ Atmos; sẽ phát định dạng tương thích."
-                    AppSettings.AUDIO_SPATIAL -> if (support.spatialReady) "Spatializer Android đang sẵn sàng." else "Spatial 360° chưa được thiết bị/đường âm thanh hỗ trợ."
-                    else -> "Đã đổi chế độ âm thanh."
+                    AppSettings.AUDIO_DOLBY -> if (support.dolbyAtmos) "Đã ưu tiên track Dolby Atmos (nếu phim có) và tắt vòm giả lập." else "Thiết bị chưa báo Atmos; sẽ phát track tương thích nếu có."
+                    AppSettings.AUDIO_SPATIAL -> if (audioVirtualizer.isActive) "Đã bật Virtualizer vòm ảo do Android cung cấp (không phải Atmos thật)." else if (support.spatialReady) "Spatializer của thiết bị sẵn sàng; hiệu ứng phụ thuộc track và đầu ra." else "Thiết bị không cung cấp Virtualizer/spatializer khả dụng; phát âm thanh gốc."
+                    AppSettings.AUDIO_AUTO -> "Tự động ưu tiên track Dolby đa kênh; stereo sẽ thử vòm ảo nếu hệ thống hỗ trợ."
+                    else -> "Đã chuyển sang âm thanh Stereo gốc."
                 }, Toast.LENGTH_LONG).show()
                 dialog.dismiss()
             }
             .setNegativeButton("Đóng", null)
             .show()
+    }
+
+    /**
+     * Selects the processing path based on the selected source track and current mode.
+     * Dolby tracks are never sent through the virtualizer; mono/stereo can use the
+     * Android Virtualizer only when Auto/Spatial is selected and the device allows it.
+     */
+    private fun applyAudioProcessingForSelectedTrack(tracks: androidx.media3.common.Tracks) {
+        val mode = settings.getString("app_audio", AppSettings.AUDIO_AUTO)
+            ?: AppSettings.AUDIO_AUTO
+
+        var selectedMime: String? = null
+        var selectedChannels = 0
+        for (group in tracks.groups) {
+            if (group.type != C.TRACK_TYPE_AUDIO) continue
+            for (index in 0 until group.length) {
+                if (!group.isTrackSelected(index)) continue
+                val format = group.getTrackFormat(index)
+                selectedMime = format.sampleMimeType
+                selectedChannels = format.channelCount
+                break
+            }
+            if (selectedMime != null) break
+        }
+
+        val selectedDolbyAtmosTrack = selectedMime == MimeTypes.AUDIO_E_AC3_JOC
+        val isMonoOrStereo = selectedChannels in 1..2
+        val shouldVirtualize = !selectedDolbyAtmosTrack && isMonoOrStereo &&
+            (mode == AppSettings.AUDIO_SPATIAL || mode == AppSettings.AUDIO_AUTO)
+
+        audioVirtualizer.setEnabled(playerAudioSessionId, shouldVirtualize)
     }
 
     private fun showAudioTrackOptions() {
@@ -1087,6 +1123,7 @@ class InAppPlayerActivity : Activity() {
             playerView.player = null
         }
 
+        audioVirtualizer.release()
         player?.release()
         player = null
 
