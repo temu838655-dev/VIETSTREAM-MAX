@@ -1606,14 +1606,14 @@ fun MovieCard(movie: Movie, favorite: Boolean = false, isTv: Boolean = false, on
     var focused by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .then(if (focused) Modifier.border(2.dp, BoOrange, RoundedCornerShape(12.dp)) else Modifier)
+            .clip(RoundedCornerShape(16.dp))
+            .then(if (focused) Modifier.border(2.dp, BoOrange, RoundedCornerShape(16.dp)) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .focusable()
     ) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(0.68f).clip(RoundedCornerShape(10.dp))
+            Modifier.fillMaxWidth().aspectRatio(0.68f).clip(RoundedCornerShape(16.dp))
         ) {
             MoviePoster(movie.poster, movie.name, Modifier.fillMaxSize())
             Box(
