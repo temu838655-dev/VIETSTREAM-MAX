@@ -16,6 +16,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items as lazyRowItems
 import androidx.compose.foundation.lazy.items as lazyItems
@@ -695,6 +696,10 @@ fun VietStreamApp(
     var selected by remember { mutableStateOf<Movie?>(null) }
     var keyword by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
+    var loadingMore by remember { mutableStateOf(false) }
+    var currentPage by remember { mutableIntStateOf(1) }
+    var canLoadMore by remember { mutableStateOf(false) }
+    val movieListState = rememberLazyListState()
     var error by remember { mutableStateOf("") }
     var detailText by remember { mutableStateOf("") }
     var episodeServers by remember { mutableStateOf<List<EpisodeServer>>(emptyList()) }
@@ -769,12 +774,15 @@ fun VietStreamApp(
 
     suspend fun loadMovies(section: String) {
         loading = true
+        loadingMore = false
+        currentPage = 1
+        canLoadMore = false
         error = ""
         try {
             movies = when (section) {
-                "Phim lẻ" -> parseMovies(MovieService.api.list("phim-le"))
-                "Phim bộ" -> parseMovies(MovieService.api.list("phim-bo"))
-                "Hoạt hình" -> parseMovies(MovieService.api.list("hoat-hinh"))
+                "Phim lẻ" -> parseMovies(MovieService.api.list("phim-le", 1)).also { canLoadMore = it.isNotEmpty() }
+                "Phim bộ" -> parseMovies(MovieService.api.list("phim-bo", 1)).also { canLoadMore = it.isNotEmpty() }
+                "Hoạt hình" -> parseMovies(MovieService.api.list("hoat-hinh", 1)).also { canLoadMore = it.isNotEmpty() }
                 "Trang chủ" -> {
                     if (profile?.isKids == true) {
                         updatedMovies = emptyList()
@@ -787,6 +795,7 @@ fun VietStreamApp(
                         } catch (_: Exception) {
                             emptyList()
                         }
+                        canLoadMore = updatedMovies.isNotEmpty()
                         homeMovies
                     }
                 }
@@ -805,6 +814,51 @@ fun VietStreamApp(
             error = "Không thể tải phim: ${e.message ?: "Lỗi kết nối"}"
         } finally {
             loading = false
+        }
+    }
+
+    suspend fun loadNextMoviePage(section: String) {
+        if (loading || loadingMore || !canLoadMore) return
+        val apiType = when (section) {
+            "Phim lẻ" -> "phim-le"
+            "Phim bộ" -> "phim-bo"
+            "Hoạt hình" -> "hoat-hinh"
+            "Trang chủ" -> "phim-moi-cap-nhat"
+            else -> return
+        }
+        loadingMore = true
+        try {
+            val nextPage = currentPage + 1
+            val nextMovies = parseMovies(MovieService.api.list(apiType, nextPage))
+            val existingSlugs = if (section == "Trang chủ") updatedMovies.map { it.slug }.toSet()
+                else movies.map { it.slug }.toSet()
+            val uniqueMovies = nextMovies.filterNot { it.slug in existingSlugs }
+            if (uniqueMovies.isEmpty()) {
+                canLoadMore = false
+            } else {
+                currentPage = nextPage
+                if (section == "Trang chủ") {
+                    updatedMovies = updatedMovies + uniqueMovies
+                    movies = (movies + uniqueMovies).distinctBy { it.slug }
+                } else {
+                    movies = movies + uniqueMovies
+                }
+                // A short page usually means the API has reached the end.
+                if (nextMovies.size < 10) canLoadMore = false
+            }
+        } catch (_: Exception) {
+            // Keep the already-loaded content visible; retry on the next scroll.
+        } finally {
+            loadingMore = false
+        }
+    }
+
+    LaunchedEffect(tab, movieListState, movies, updatedMovies, loading, loadingMore, canLoadMore) {
+        if (tab !in listOf("Trang chủ", "Phim lẻ", "Phim bộ", "Hoạt hình") || loading || loadingMore || !canLoadMore) return@LaunchedEffect
+        val layout = movieListState.layoutInfo
+        val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: return@LaunchedEffect
+        if (layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 5) {
+            loadNextMoviePage(tab)
         }
     }
 
@@ -1013,6 +1067,7 @@ fun VietStreamApp(
 
                         // Toàn bộ nội dung phim, bộ lọc và poster dùng chung một vùng cuộn.
                         LazyColumn(
+                            state = movieListState,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(bottom = 20.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1195,6 +1250,14 @@ fun VietStreamApp(
                                             if (row.size == 1) Spacer(Modifier.weight(1f))
                                         }
                                     }
+                            }
+
+                            if (loadingMore) {
+                                item(key = "loading_more_movies") {
+                                    Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+                                    }
+                                }
                             }
 
                             if (tab == "Tìm kiếm") {
