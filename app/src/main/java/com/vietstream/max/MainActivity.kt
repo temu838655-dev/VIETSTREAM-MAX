@@ -1362,9 +1362,34 @@ private fun SettingsScreen(
     var showClearFavorites by remember { mutableStateOf(false) }
     var showClearHistory by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState()).padding(horizontal = if (isTv) 28.dp else 18.dp)) {
-        Text("CÀI ĐẶT", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Text("Thiết lập ứng dụng", color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 30.sp else 24.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
-        BoPhimWordmark(16)
+        Row(
+            Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("THIẾT LẬP", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
+                Text("Cài đặt", color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 34.sp else 30.sp, fontWeight = FontWeight.Black)
+                Text("Cá nhân hóa trải nghiệm xem phim của bạn.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+            }
+            BoPhimWordmark(if (isTv) 22 else 20)
+        }
+        Box(
+            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 18.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Brush.horizontalGradient(listOf(Color(0xFF173A70), Color(0xFF172338), Color(0xFF101522))))
+                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
+                .padding(16.dp)
+        ) {
+            Column {
+                Text("BO PHIM", color = Color(0xFFFF8A00), fontSize = 10.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+                Text("Tất cả trong tầm tay", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+                Text("Giao diện • Phát phim • Hồ sơ • Thông báo", color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+
+        var notifyNewMovies by remember { mutableStateOf(settingsContext.getSharedPreferences("vietstream_settings", Context.MODE_PRIVATE).getBoolean("notify_new_movies", true)) }
+        var notifyContinueWatching by remember { mutableStateOf(settingsContext.getSharedPreferences("vietstream_settings", Context.MODE_PRIVATE).getBoolean("notify_continue_watching", true)) }
+        var notifyRecommendations by remember { mutableStateOf(settingsContext.getSharedPreferences("vietstream_settings", Context.MODE_PRIVATE).getBoolean("notify_recommendations", false)) }
 
         Spacer(Modifier.height(20.dp))
         Text("HỒ SƠ NGƯỜI DÙNG", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -1469,6 +1494,23 @@ private fun SettingsScreen(
         Text("Trạng thái thiết bị: Dolby Atmos " + (if (audioSupport.dolbyAtmos) "có khả năng hỗ trợ" else "chưa phát hiện hỗ trợ") + " • Spatial Audio " + (if (audioSupport.spatialReady) "đang sẵn sàng" else "không khả dụng/chưa bật") + ".", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
         Text("Atmos cần nguồn phim có track Atmos và thiết bị/đường âm thanh tương thích. Spatial 360° dùng spatializer của Android cho âm thanh đa kênh; Stereo không thể biến thành Atmos gốc.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
 
+        Spacer(Modifier.height(18.dp))
+        Text("THÔNG BÁO", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Text("Bạn muốn nhận thông tin nào?", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+        SettingsSwitchItem("Phim mới cập nhật", "Thông tin phim mới từ nguồn dữ liệu", notifyNewMovies, {
+            notifyNewMovies = it
+            settingsContext.getSharedPreferences("vietstream_settings", Context.MODE_PRIVATE).edit().putBoolean("notify_new_movies", it).apply()
+        })
+        SettingsSwitchItem("Tiếp tục xem", "Nhắc bạn quay lại phim đang xem", notifyContinueWatching, {
+            notifyContinueWatching = it
+            settingsContext.getSharedPreferences("vietstream_settings", Context.MODE_PRIVATE).edit().putBoolean("notify_continue_watching", it).apply()
+        })
+        SettingsSwitchItem("Đề xuất phim", "Gợi ý phim để khám phá", notifyRecommendations, {
+            notifyRecommendations = it
+            settingsContext.getSharedPreferences("vietstream_settings", Context.MODE_PRIVATE).edit().putBoolean("notify_recommendations", it).apply()
+        })
+        Text("Các lựa chọn này được lưu trên thiết bị. Thông báo đẩy tự động cần thêm dịch vụ nền và nguồn gửi thông báo; hiện chưa được kích hoạt.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+
         Spacer(Modifier.height(24.dp))
         Text("THƯ VIỆN CỦA BẠN", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         if (!isKids) {
@@ -1505,6 +1547,23 @@ private fun SettingsScreen(
         confirmButton = { TextButton(onClick = { onClearHistory(); showClearHistory = false }) { Text("Xóa", color = MaterialTheme.colorScheme.primary) } },
         dismissButton = { TextButton(onClick = { showClearHistory = false }) { Text("Hủy", color = MaterialTheme.colorScheme.onSurface) } }
     )
+}
+
+@Composable
+private fun SettingsSwitchItem(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF151D2B))
+            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
 }
 
 @Composable
