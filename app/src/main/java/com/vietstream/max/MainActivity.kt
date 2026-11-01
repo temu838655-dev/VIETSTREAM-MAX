@@ -1641,7 +1641,18 @@ private fun SettingsSwitchItem(title: String, subtitle: String, checked: Boolean
             Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = BoOrange,
+                checkedTrackColor = BoBlue,
+                checkedBorderColor = BoBlue,
+                uncheckedThumbColor = Color(0xFF9CA3AF),
+                uncheckedTrackColor = Color(0xFF273244),
+                uncheckedBorderColor = Color(0xFF475569)
+            )
+        )
     }
 }
 
