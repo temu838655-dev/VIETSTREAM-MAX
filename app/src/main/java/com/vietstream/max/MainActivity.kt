@@ -1374,6 +1374,8 @@ private fun SettingsScreen(
                 Text("THIẾT LẬP", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.5.sp)
                 Text("Cài đặt", color = MaterialTheme.colorScheme.onSurface, fontSize = if (isTv) 34.sp else 30.sp, fontWeight = FontWeight.Black)
                 Text("Cá nhân hóa trải nghiệm xem phim của bạn.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.width(46.dp).height(3.dp).clip(RoundedCornerShape(3.dp)).background(Brush.horizontalGradient(listOf(BoBlue, BoOrange))))
             }
             BoPhimWordmark(if (isTv) 22 else 20)
         }
