@@ -843,8 +843,6 @@ fun VietStreamApp(
                 } else {
                     movies = movies + uniqueMovies
                 }
-                // A short page usually means the API has reached the end.
-                if (nextMovies.size < 10) canLoadMore = false
             }
         } catch (_: Exception) {
             // Keep the already-loaded content visible; retry on the next scroll.
