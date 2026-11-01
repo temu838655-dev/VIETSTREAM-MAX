@@ -1136,7 +1136,7 @@ fun VietStreamApp(
                                 else -> {
                                     val railMovies = if (tab == "Trang chủ" && updatedMovies.isNotEmpty()) updatedMovies else visibleMovies
                                     lazyItems(items = railMovies.chunked(2), key = { row -> row.firstOrNull()?.slug ?: "empty_row" }) { row ->
-                                        Row(Modifier.fillMaxWidth().padding(horizontal = if (isTv) 22.dp else 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        Row(Modifier.fillMaxWidth().padding(horizontal = if (isTv) 24.dp else 16.dp), horizontalArrangement = Arrangement.spacedBy(if (isTv) 18.dp else 14.dp)) {
                                             row.forEach { movie ->
                                                 Box(Modifier.weight(1f)) {
                                                     MovieCard(movie, favoriteList.any { it.slug == movie.slug }, isTv) { selected = movie }
