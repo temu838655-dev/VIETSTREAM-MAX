@@ -1450,7 +1450,7 @@ private fun SettingsScreen(
                     ),
                     border = FilterChipDefaults.filterChipBorder(
                         enabled = true,
-                        selected = subtitleColor == color,
+                        selected = appSettings.theme == value,
                         borderColor = Color.White.copy(alpha = 0.12f),
                         selectedBorderColor = BoOrange,
                         borderWidth = 1.dp,
