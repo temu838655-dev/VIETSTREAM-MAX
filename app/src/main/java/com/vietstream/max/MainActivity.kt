@@ -1441,7 +1441,22 @@ private fun SettingsScreen(
         Text("Chế độ hiển thị", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp))
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(AppSettings.THEME_SYSTEM to "Theo hệ thống", AppSettings.THEME_DARK to "Tối", AppSettings.THEME_LIGHT to "Sáng").forEach { (value, label) ->
-                FilterChip(selected = appSettings.theme == value, onClick = { AppSettings.saveTheme(settingsContext, value); onSettingsChanged() }, label = { Text(label, fontSize = 11.sp) })
+                FilterChip(selected = appSettings.theme == value, onClick = { AppSettings.saveTheme(settingsContext, value); onSettingsChanged() }, label = { Text(label, fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = BoBlue.copy(alpha = 0.24f),
+                        selectedLabelColor = Color.White,
+                        containerColor = Color(0xFF111827),
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = subtitleColor == color,
+                        borderColor = Color.White.copy(alpha = 0.12f),
+                        selectedBorderColor = BoOrange,
+                        borderWidth = 1.dp,
+                        selectedBorderWidth = 1.dp
+                    )
+                )
             }
         }
 
@@ -1497,7 +1512,22 @@ private fun SettingsScreen(
                 FilterChip(selected = subtitleSize == size, onClick = {
                     subtitleSize = size
                     playbackPrefs.edit().putInt("subtitle_size", size).apply()
-                }, label = { Text("${size}sp") })
+                }, label = { Text("${size}sp") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = BoBlue.copy(alpha = 0.24f),
+                        selectedLabelColor = Color.White,
+                        containerColor = Color(0xFF111827),
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = subtitleSize == size,
+                        borderColor = Color.White.copy(alpha = 0.12f),
+                        selectedBorderColor = BoOrange,
+                        borderWidth = 1.dp,
+                        selectedBorderWidth = 1.dp
+                    )
+                )
             }
         }
         Text("Màu chữ", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp))
