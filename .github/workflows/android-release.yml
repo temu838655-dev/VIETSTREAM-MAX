@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without v prefix (for example 1.0.1)"
+        required: true
+        default: "1.0.1"
 
 permissions:
   contents: write
@@ -33,6 +38,7 @@ jobs:
       - name: Publish APK to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Bo Phim ${{ github.ref_name }}
+          name: Bo Phim ${{ inputs.version || github.ref_name }}
+          tag_name: v${{ inputs.version || github.ref_name }}
           generate_release_notes: true
           files: app/build/outputs/apk/release/app-release.apk
