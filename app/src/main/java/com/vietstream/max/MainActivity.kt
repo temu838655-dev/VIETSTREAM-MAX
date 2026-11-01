@@ -1549,7 +1549,25 @@ private fun SettingsScreen(
         Text("Ưu tiên âm thanh", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(AppSettings.AUDIO_AUTO to "Tự động", AppSettings.AUDIO_STEREO to "Stereo", AppSettings.AUDIO_DOLBY to "Dolby Atmos", AppSettings.AUDIO_SPATIAL to "Spatial 360°").forEach { (value, label) ->
-                FilterChip(selected = appSettings.audioMode == value, onClick = { AppSettings.saveAudioMode(settingsContext, value); onSettingsChanged() }, label = { Text(label, fontSize = 11.sp) })
+                FilterChip(
+                    selected = appSettings.audioMode == value,
+                    onClick = { AppSettings.saveAudioMode(settingsContext, value); onSettingsChanged() },
+                    label = { Text(label, fontSize = 11.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = BoBlue.copy(alpha = 0.24f),
+                        selectedLabelColor = Color.White,
+                        containerColor = Color(0xFF111827),
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = appSettings.audioMode == value,
+                        borderColor = Color.White.copy(alpha = 0.12f),
+                        selectedBorderColor = BoOrange,
+                        borderWidth = 1.dp,
+                        selectedBorderWidth = 1.dp
+                    )
+                )
             }
         }
         Text("Trạng thái thiết bị: Dolby Atmos " + (if (audioSupport.dolbyAtmos) "có khả năng hỗ trợ" else "chưa phát hiện hỗ trợ") + " • Spatial Audio " + (if (audioSupport.spatialReady) "đang sẵn sàng" else "không khả dụng/chưa bật") + ".", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
