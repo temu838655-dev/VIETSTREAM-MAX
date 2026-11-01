@@ -624,6 +624,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val isTv = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
         setContent {
+            var updateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
+            var updateDismissed by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                updateInfo = UpdateChecker.check(this@MainActivity)
+            }
             var appSettings by remember { mutableStateOf(AppSettings.read(this@MainActivity)) }
             val darkTheme = when (appSettings.theme) {
                 AppSettings.THEME_LIGHT -> false
@@ -642,6 +647,23 @@ class MainActivity : ComponentActivity() {
                     appSettings = appSettings,
                     onSettingsChanged = { appSettings = AppSettings.read(this@MainActivity) }
                 )
+                val availableUpdate = updateInfo
+                if (availableUpdate != null && !updateDismissed) {
+                    AlertDialog(
+                        onDismissRequest = { updateDismissed = true },
+                        title = { Text("Có bản Bo Phim mới") },
+                        text = { Text("Phiên bản ${availableUpdate.version} đã sẵn sàng. Bạn có muốn tải về không?") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                updateDismissed = true
+                                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(availableUpdate.downloadUrl)))
+                            }) { Text("Tải bản mới") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { updateDismissed = true }) { Text("Để sau") }
+                        }
+                    )
+                }
             }
         }
     }
