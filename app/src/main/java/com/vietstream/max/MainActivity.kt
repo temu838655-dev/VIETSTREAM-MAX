@@ -53,6 +53,8 @@ import com.google.gson.JsonElement
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.animation.Crossfade
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -838,8 +840,9 @@ fun VietStreamApp(
             } else {
                 currentPage = nextPage
                 if (section == "Trang chủ") {
-                    updatedMovies = updatedMovies + uniqueMovies
-                    movies = (movies + uniqueMovies).distinctBy { it.slug }
+                    // Trang chủ giữ nguyên dữ liệu đề xuất; chỉ nối trang mới vào danh sách cập nhật.
+                    // Tránh đưa cùng phim vào cả hai khu vực và hiển thị poster trùng lặp.
+                    updatedMovies = (updatedMovies + uniqueMovies).distinctBy { it.slug }
                 } else {
                     movies = movies + uniqueMovies
                 }
@@ -851,12 +854,20 @@ fun VietStreamApp(
         }
     }
 
-    LaunchedEffect(tab, movieListState, movies, updatedMovies, loading, loadingMore, canLoadMore) {
-        if (tab !in listOf("Trang chủ", "Phim lẻ", "Phim bộ", "Hoạt hình") || loading || loadingMore || !canLoadMore) return@LaunchedEffect
-        val layout = movieListState.layoutInfo
-        val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: return@LaunchedEffect
-        if (layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 5) {
-            loadNextMoviePage(tab)
+    LaunchedEffect(tab, movieListState) {
+        if (tab !in listOf("Trang chủ", "Phim lẻ", "Phim bộ", "Hoạt hình")) return@LaunchedEffect
+        // Theo dõi cuộn thực tế. Effect cũ chỉ kiểm tra một lần khi dữ liệu đổi,
+        // nên người dùng cuộn xuống sau đó có thể không kích hoạt tải trang tiếp.
+        snapshotFlow {
+            val layout = movieListState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            layout.totalItemsCount to lastVisible
+        }.collect { (totalItems, lastVisible) ->
+            if (!loading && !loadingMore && canLoadMore &&
+                totalItems > 0 && lastVisible >= totalItems - 5
+            ) {
+                loadNextMoviePage(tab)
+            }
         }
     }
 
