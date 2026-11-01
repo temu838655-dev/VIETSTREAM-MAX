@@ -944,6 +944,8 @@ fun VietStreamApp(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     BoPhimWordmark(if (isTv) 27 else 23)
+                    Spacer(Modifier.width(8.dp))
+                    Text("GIẢI TRÍ KHÔNG GIỚI HẠN", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = if (isTv) 10.sp else 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     Spacer(Modifier.weight(1f))
                     if (profilesEnabled) {
                         TextButton(onClick = { needsProfilePicker = true; selected = null }) {
