@@ -1078,7 +1078,9 @@ fun VietStreamApp(
                             }
 
                             item(key = "movie_section_title") {
-                                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.width(4.dp).height(if (isTv) 34.dp else 28.dp).clip(RoundedCornerShape(4.dp)).background(BoOrange))
+                                    Spacer(Modifier.width(10.dp))
                                     Column {
                                         Text(
                                             when (tab) {
